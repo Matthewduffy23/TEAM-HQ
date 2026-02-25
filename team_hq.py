@@ -385,6 +385,34 @@ if display_league_filter != "All leagues":
 team_options = sorted(df["Team"].dropna().unique().tolist())
 
 # ─────────────────────────────────────────────
+# MASTER TEAM SELECTOR
+# ─────────────────────────────────────────────
+st.markdown("### 🔍 Team Selection")
+st.caption("Selecting a team here drives Team Profile, Feature F, and Feature Y automatically.")
+
+# Build team→league lookup
+team_league_map = df.set_index("Team")["League"].to_dict() if "League" in df.columns else {}
+
+def _on_master_team_change():
+    new_team = st.session_state["ts_master_team"]
+    new_league = team_league_map.get(new_team, "")
+    # Reset all per-section comp pools to own league
+    if new_league:
+        st.session_state["ts_profile_comp_leagues"] = [new_league]
+        st.session_state["ts_y_comp"] = [new_league]
+    # Sync individual selectors
+    st.session_state["ts_profile_team"] = new_team
+    st.session_state["ts_f_team"] = new_team
+    st.session_state["ts_y_team"] = new_team
+
+master_team = st.selectbox(
+    "Select team (syncs all sections below)",
+    team_options,
+    key="ts_master_team",
+    on_change=_on_master_team_change,
+)
+
+# ─────────────────────────────────────────────
 # BADGE / FLAG HELPERS
 # ─────────────────────────────────────────────
 try:
@@ -686,21 +714,39 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🎯 Team Profile")
 
-sel_team = st.selectbox("Select team", team_options, key="ts_profile_team")
+# Default to master team selection
+_profile_default_idx = team_options.index(master_team) if master_team in team_options else 0
+sel_team = st.selectbox("Select team", team_options, index=_profile_default_idx, key="ts_profile_team")
 team_row = df[df["Team"] == sel_team]
 if team_row.empty:
     st.info("Team not found.")
 else:
     team_row = team_row.iloc[0]
-    team_league = str(team_row.get("League",""))
+    team_league = str(team_row["League"]) if "League" in team_row.index else ""
+
+    # Auto-default comp_leagues to own league when team changes
+    _prof_comp_default = st.session_state.get("ts_profile_comp_leagues", [team_league])
+    # If the stored default no longer matches current team's league, reset it
+    if _prof_comp_default and team_league and _prof_comp_default != [team_league]:
+        # Only auto-reset if the session state was set by master selector
+        pass  # keep user's manual choice
 
     comp_leagues = st.multiselect(
         "Comparison pool (default = own league)",
         sorted(df["League"].dropna().unique()),
-        default=[team_league],
+        default=_prof_comp_default if _prof_comp_default else [team_league],
         key="ts_profile_comp_leagues"
     )
     pool = df[df["League"].isin(comp_leagues)] if comp_leagues else df[df["League"] == team_league]
+
+    # Editable title & subtitle
+    _default_title = f"{sel_team} Style & Performance"
+    _default_subtitle = f"Percentile Scores vs {', '.join(comp_leagues) if comp_leagues else team_league}"
+    c_title, c_sub = st.columns(2)
+    with c_title:
+        profile_title = st.text_input("Chart title", value=_default_title, key="ts_profile_title")
+    with c_sub:
+        profile_subtitle = st.text_input("Chart subtitle", value=_default_subtitle, key="ts_profile_subtitle")
 
     RADAR_METRICS_TEAM = [
         "xG p90", "Goals p90", "Touches in Box p90",
@@ -709,6 +755,11 @@ else:
         "Passes to Final Third p90", "Points", "Expected Points"
     ]
     radar_metrics = [m for m in RADAR_METRICS_TEAM if m in df.columns]
+
+    # Custom label override for Team Profile radar only
+    PROFILE_LABEL_OVERRIDE = {
+        "Passes to Final Third p90": "Passes Final 3rd",
+    }
 
     def team_pct(t_row, pool_df, col, invert=False):
         if col not in pool_df.columns or col not in t_row.index: return 50.0
@@ -719,7 +770,7 @@ else:
         return (100-p) if invert else p
 
     pcts = [team_pct(team_row, pool, m, m in INVERT_METRICS) for m in radar_metrics]
-    labels_clean = [mlabel(m) for m in radar_metrics]
+    labels_clean = [PROFILE_LABEL_OVERRIDE.get(m, mlabel(m)) for m in radar_metrics]
 
     # ── Radar styled like attached Python example ──
     color_scale = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
@@ -773,12 +824,13 @@ else:
     ax.spines['polar'].set_visible(False)
     ax.grid(False)
 
-    # Title lines like the Python example (top-left)
-    comp_label = ", ".join(comp_leagues) if comp_leagues else team_league
-    fig.text(0.05, 0.96, f"{sel_team} Style & Performance", fontsize=14,
-             weight='bold', ha='left', color='#111111')
-    fig.text(0.05, 0.935, f"Percentile Scores vs {comp_label}", fontsize=9,
-             ha='left', color='gray')
+    # Title lines (editable)
+    if profile_title.strip():
+        fig.text(0.05, 0.96, profile_title.strip(), fontsize=14,
+                 weight='bold', ha='left', color='#111111')
+    if profile_subtitle.strip():
+        fig.text(0.05, 0.935, profile_subtitle.strip(), fontsize=9,
+                 ha='left', color='gray')
 
     # Badge in top-right corner
     badge_img = get_team_badge(sel_team)
@@ -838,53 +890,54 @@ else:
     st.markdown("**Weaknesses:**")
     st.markdown(chips_html(list(dict.fromkeys(weaknesses)), "#fecaca"), unsafe_allow_html=True)
 
-    # ── Scores table with diverging 0-100 colour ──
+    # ── Scores — render as HTML to avoid pandas styler issues ──
     st.markdown("**Scores:**")
 
-    def _safe_score(row, key):
-        try:
-            v = row[key]
-            return float(v) if pd.notna(v) else np.nan
-        except Exception:
-            return np.nan
+    SCORE_RED_S   = np.array([190, 42,  62])
+    SCORE_ORG_S   = np.array([230, 120, 50])
+    SCORE_GOLD_S  = np.array([244, 197, 102])
+    SCORE_GREEN_S = np.array([34,  197, 94])
 
-    score_data = {
-        "Score": ["OVR","ATT","DEF","POS"],
-        "Value": [_safe_score(team_row, "OVR"), _safe_score(team_row, "ATT"),
-                  _safe_score(team_row, "DEF"), _safe_score(team_row, "POS")]
-    }
-    sdf = pd.DataFrame(score_data).set_index("Score")
-
-    # Diverging red→orange→gold→green 0-100
-    SCORE_RED   = np.array([190, 42,  62])
-    SCORE_ORG   = np.array([230, 120, 50])
-    SCORE_GOLD  = np.array([244, 197, 102])
-    SCORE_GREEN = np.array([34,  197, 94])
-
-    def sc_color_div(v):
-        if pd.isna(v): return "background:#1a1a2e;color:#fff"
+    def score_bg(v):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return "#333", "#fff"
         v = float(np.clip(v, 0, 100))
         if v <= 33:
-            t = v / 33
-            c = SCORE_RED + (SCORE_ORG - SCORE_RED) * t
+            t = v / 33; c = SCORE_RED_S + (SCORE_ORG_S - SCORE_RED_S) * t
         elif v <= 66:
-            t = (v - 33) / 33
-            c = SCORE_ORG + (SCORE_GOLD - SCORE_ORG) * t
+            t = (v - 33) / 33; c = SCORE_ORG_S + (SCORE_GOLD_S - SCORE_ORG_S) * t
         else:
-            t = (v - 66) / 34
-            c = SCORE_GOLD + (SCORE_GREEN - SCORE_GOLD) * t
-        r, g, b = int(np.clip(c[0],0,255)), int(np.clip(c[1],0,255)), int(np.clip(c[2],0,255))
-        text = "#000" if v > 45 else "#fff"
-        return f"background:rgb({r},{g},{b});color:{text}"
+            t = (v - 66) / 34; c = SCORE_GOLD_S + (SCORE_GREEN_S - SCORE_GOLD_S) * t
+        r2, g2, b2 = int(np.clip(c[0],0,255)), int(np.clip(c[1],0,255)), int(np.clip(c[2],0,255))
+        fg = "#000" if v > 45 else "#fff"
+        return f"rgb({r2},{g2},{b2})", fg
 
-    try:
-        styled_sdf = sdf.style.map(sc_color_div, subset=["Value"])
-    except AttributeError:
-        styled_sdf = sdf.style.applymap(sc_color_div, subset=["Value"])
+    def _get_score(row, key):
+        try:
+            v = row[key]
+            return float(v) if pd.notna(v) else None
+        except Exception:
+            return None
 
-    st.dataframe(
-        styled_sdf.format({"Value": lambda x: f"{int(round(x))}" if pd.notna(x) else "—"}),
-        use_container_width=True
+    score_rows_html = ""
+    for label, key in [("Overall","OVR"),("Attack","ATT"),("Defense","DEF"),("Possession","POS")]:
+        val = _get_score(team_row, key)
+        bg_c, fg_c = score_bg(val)
+        val_str = f"{int(round(val))}" if val is not None else "—"
+        score_rows_html += (
+            f"<tr>"
+            f"<td style='padding:8px 14px;font-weight:700;color:#e8ecff;background:#1a2035;"
+            f"border-bottom:1px solid #2a3145;'>{label}</td>"
+            f"<td style='padding:8px 14px;text-align:center;font-weight:800;font-size:18px;"
+            f"background:{bg_c};color:{fg_c};border-bottom:1px solid #2a3145;min-width:80px;'>"
+            f"{val_str}</td>"
+            f"</tr>"
+        )
+
+    st.markdown(
+        f"<table style='border-collapse:collapse;border-radius:10px;overflow:hidden;"
+        f"width:220px;'>{score_rows_html}</table>",
+        unsafe_allow_html=True
     )
 
 st.markdown("---")
@@ -894,7 +947,9 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("📋 Feature F — Team Percentile Board")
 
-sel_team_f = st.selectbox("Select team", team_options, key="ts_f_team")
+sel_team_f = st.selectbox("Select team", team_options,
+                          index=team_options.index(master_team) if master_team in team_options else 0,
+                          key="ts_f_team")
 t_row_f = df[df["Team"] == sel_team_f]
 if t_row_f.empty:
     st.info("Team not found.")
@@ -1032,7 +1087,9 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🌀 Feature Y — Team Polar Radar")
 
-sel_team_y = st.selectbox("Select team", team_options, key="ts_y_team")
+sel_team_y = st.selectbox("Select team", team_options,
+                          index=team_options.index(master_team) if master_team in team_options else 0,
+                          key="ts_y_team")
 t_row_y = df[df["Team"] == sel_team_y]
 if t_row_y.empty:
     st.info("Team not found.")
