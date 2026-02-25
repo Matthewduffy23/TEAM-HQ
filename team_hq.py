@@ -1557,15 +1557,21 @@ for _src, _dst in [("Points","Points p90"),("Expected Points","Expected Points p
 
 radar_comp_avail = [m for m in RADAR_COMP_METRICS if m in df.columns]
 
+# Team A is always the selected team — shown as read-only info
+st.info(f"**Team A (red):** {sel_team}  —  {team_league}")
+
+# Team B defaults to a team from the same league, selectable
+_comp_b_same_league = [t for t in team_options if t != sel_team and team_league_map.get(t,"") == team_league]
+_comp_b_other       = [t for t in team_options if t != sel_team and team_league_map.get(t,"") != team_league]
+_comp_b_opts        = _comp_b_same_league + _comp_b_other
+comp_team_b_sel = st.selectbox("Team B (blue)", _comp_b_opts, key=f"ts_comp_b_{sel_team}")
+
 with st.expander("Radar settings", expanded=False):
-    comp_theme  = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_comp_theme")
-    # Team A defaults to sel_team from Team Profile
-    _comp_a_idx = team_options.index(sel_team) if sel_team in team_options else 0
-    _comp_b_opts= [t for t in team_options if t != sel_team]
-    comp_team_a_label = st.text_input("Edit Team A label", sel_team, key="ts_comp_a_label")
-    comp_team_b_label_default = _comp_b_opts[0] if _comp_b_opts else ""
-    comp_team_b_sel   = st.selectbox("Team B (blue)", _comp_b_opts, key="ts_comp_b")
-    comp_team_b_label = st.text_input("Edit Team B label", comp_team_b_sel, key="ts_comp_b_label")
+    comp_theme        = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_comp_theme")
+    comp_team_a_label = st.text_input("Edit Team A label", sel_team,
+                                      key=f"ts_comp_a_label_{sel_team}")
+    comp_team_b_label = st.text_input("Edit Team B label", comp_team_b_sel,
+                                      key=f"ts_comp_b_label_{sel_team}_{comp_team_b_sel}")
     comp_show_title   = st.checkbox("Show custom title", False, key="ts_comp_show_title")
     comp_custom_title = st.text_input("Custom title", "", key="ts_comp_custom_title")
 
@@ -1597,22 +1603,22 @@ if row_a is not None and row_b is not None and radar_comp_avail:
         inv = col in INVERT_METRICS
         if col not in _pool_ab.columns: return 50.0
         s = pd.to_numeric(_pool_ab[col], errors="coerce").dropna()
-        v = float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
+        try: v = float(t_row[col])
+        except: return 50.0
         if pd.isna(v) or s.empty: return 50.0
-        p = (s<v).mean()*100 + (s==v).mean()*50
-        return float(np.clip((100-p) if inv else p, 0, 100))
+        p = (s < v).mean()*100 + (s == v).mean()*50
+        # For inverted metrics: lower raw value = higher percentile (better)
+        return float(np.clip(100 - p if inv else p, 0, 100))
 
     def _actual_val(t_row, col):
-        """Return actual value formatted to 2dp for display on ring ticks."""
-        v = t_row.get(col, np.nan) if hasattr(t_row, 'get') else t_row[col]
-        try: v = float(v)
+        try: v = float(t_row[col])
         except: return "—"
+        if pd.isna(v): return "—"
         return f"{v:.2f}".rstrip("0").rstrip(".")
 
     A_r = np.array([_pct_ab(row_a, m) for m in radar_comp_avail])
     B_r = np.array([_pct_ab(row_b, m) for m in radar_comp_avail])
 
-    # Actual values for tick labels (show real values, plotted by percentile)
     A_actual = [_actual_val(row_a, m) for m in radar_comp_avail]
     B_actual = [_actual_val(row_b, m) for m in radar_comp_avail]
 
@@ -1627,9 +1633,15 @@ if row_a is not None and row_b is not None and radar_comp_avail:
     _FILL_A=(200/255,30/255,30/255,0.60); _FILL_B=(29/255,78/255,216/255,0.60)
     _INNER=10; _RING_LW=1.0; _OUTER_R=107
 
-    # TRUE decile values per metric (for ring tick labels)
-    _qs = np.linspace(0,100,11)
-    _axis_ticks = [np.nanpercentile(_pool_ab[m].dropna().values, _qs) for m in radar_comp_avail]
+    # Ring tick labels: for INVERTED metrics show descending values outward
+    # (outer ring = lowest raw value = best performance)
+    _qs = np.linspace(0, 100, 11)
+    _axis_ticks = []
+    for _m in radar_comp_avail:
+        _vals = np.nanpercentile(_pool_ab[_m].dropna().values, _qs)
+        if _m in INVERT_METRICS:
+            _vals = _vals[::-1]  # flip: outer ring shows lowest (best) value
+        _axis_ticks.append(_vals)
 
     fig_c = plt.figure(figsize=(13.2, 8.0), dpi=260)
     fig_c.patch.set_facecolor(_CR_PBG)
