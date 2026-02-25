@@ -1232,6 +1232,8 @@ else:
         _ts = (_lb_vals - _vmin) / (_vmax - _vmin)
     else:
         _ts = np.zeros(len(_lb_vals))
+    # For inverted metrics (lower=better), flip so the lowest bar gets the "best" colour
+    if lb_metric in INVERT_METRICS: _ts = 1.0 - _ts
     if lb_rev: _ts = 1.0 - _ts
 
     def _lb_cmap(palette, t):
@@ -1474,6 +1476,10 @@ else:
         # Axes
         ax_sc.set_xlabel(mlabel(sc_x), fontsize=14, fontweight="semibold", color=_SC_TXT)
         ax_sc.set_ylabel(mlabel(sc_y), fontsize=14, fontweight="semibold", color=_SC_TXT)
+
+        # Invert axis direction for metrics where lower = better
+        if sc_x in INVERT_METRICS: ax_sc.invert_xaxis()
+        if sc_y in INVERT_METRICS: ax_sc.invert_yaxis()
 
         if sc_tick_mode == "Auto":
             _sx = _sc_nice_step(*_xlim, target=12)
@@ -1834,15 +1840,22 @@ else:
                 # ── Final: 50/50 blend of both signals ──
                 _sims = ((_sims_pct * 0.5) + (_sims_act * 0.5)).round(1)
 
-                # ── Output table ──
-                _out = _cand_df[["Team", "League"]].copy()
+                # ── Output table: merge actual values from df so they survive sort ──
+                _out = _cand_df[["Team", "League"]].copy().reset_index(drop=True)
                 _out["Similarity"] = _sims
+
+                # Pull actual values from source df (correct, not positionally misaligned)
+                _ctx_cols = ["xG p90", "xG Against p90", "PPDA", "Possession %", "Passes p90"]
+                _ctx_avail = [c for c in _ctx_cols if c in df.columns]
+                _ctx_src = df[["Team", "League"] + _ctx_avail].copy()
+                for _cc in _ctx_avail:
+                    _ctx_src[_cc] = pd.to_numeric(_ctx_src[_cc], errors="coerce").round(2)
+                _out = _out.merge(_ctx_src, on=["Team", "League"], how="left")
+                _out = _out.rename(columns={c: mlabel(c) for c in _ctx_avail})
+
+                # Now sort
                 _out = _out.sort_values("Similarity", ascending=False).reset_index(drop=True)
                 _out.insert(0, "Rank", np.arange(1, len(_out) + 1))
-
-                for _cf in ["xG p90", "xG Against p90", "PPDA", "Possession %", "Passes p90"]:
-                    if _cf in _cand_df.columns:
-                        _out[mlabel(_cf)] = _cand_df[_cf].values
 
                 st.caption(
                     f"**{sel_team}** vs {len(_out):,} teams · "
@@ -1860,12 +1873,21 @@ else:
                     elif v >= 25: return "background-color:#ca8a04;color:#000"
                     else:         return "background-color:#b91c1c;color:#fff"
 
+                _fmt_dict = {"Similarity": "{:.1f}"}
+                for _cc in _ctx_avail:
+                    _lbl = mlabel(_cc)
+                    if _lbl in _out.columns:
+                        _fmt_dict[_lbl] = "{:.2f}"
+
                 try:
                     _styled = _out.head(int(st_top_n)).style.map(_sim_color, subset=["Similarity"])
                 except AttributeError:
                     _styled = _out.head(int(st_top_n)).style.applymap(_sim_color, subset=["Similarity"])
 
-                st.dataframe(_styled.format({"Similarity": "{:.1f}"}), use_container_width=True)
+                st.dataframe(
+                    _styled.format(_fmt_dict).hide(axis="index"),
+                    use_container_width=True
+                )
 
     except ImportError:
         st.warning("scikit-learn is required. Run: `pip install scikit-learn`")
