@@ -1165,82 +1165,136 @@ else:
 st.markdown("---")
 
 # ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 # SECTION 6 – LEADERBOARD
 # ══════════════════════════════════════════════════════
+import re as _re
+from matplotlib.ticker import FuncFormatter as _FuncFormatter
+
 st.subheader("📉 Leaderboard")
+st.markdown("---")
 
 with st.expander("Leaderboard settings", expanded=False):
-    lb_metric = st.selectbox("Metric", [c for c in NUMERIC_COLS if c in df.columns],
-                             format_func=mlabel, key="ts_lb_metric")
-    lb_n = st.slider("Top N", 5, 40, 20, 5, key="ts_lb_n")
-    lb_theme = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_lb_theme")
-    lb_palette = st.selectbox("Palette", ["Red–Gold–Green","All Black","All Blue","Light→Dark Blue"], key="ts_lb_pal")
-    show_team_names_lb = st.checkbox("Show league in label", True, key="ts_lb_names")
+    _lb_metric_opts = [c for c in NUMERIC_COLS if c in df.columns]
+    _lb_def = "xG p90" if "xG p90" in _lb_metric_opts else _lb_metric_opts[0]
+    lb_metric   = st.selectbox("Metric", _lb_metric_opts, index=_lb_metric_opts.index(_lb_def),
+                               format_func=mlabel, key="ts_lb_metric")
+    lb_n        = st.slider("Top N", 5, 40, 20, 5, key="ts_lb_n")
+    lb_theme    = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_lb_theme")
 
+    _lb_pal_opts = [
+        "Red–Gold–Green (diverging)",
+        "Light-grey → Black",
+        "Light-Red → Dark-Red",
+        "Light-Blue → Dark-Blue",
+        "Light-Green → Dark-Green",
+        "Purple ↔ Gold (diverging)",
+        "All White", "All Black", "All Red", "All Blue", "All Green",
+    ]
+    lb_palette     = st.selectbox("Palette", _lb_pal_opts,
+                                  index=_lb_pal_opts.index("All Black"), key="ts_lb_palette")
+    lb_rev         = st.checkbox("Reverse colours", False, key="ts_lb_rev")
+    lb_show_league = st.checkbox("Show league in label", False, key="ts_lb_show_league")
+    lb_show_title  = st.checkbox("Show custom title", False, key="ts_lb_show_title")
+    lb_custom_title= st.text_input("Custom title", f"Top N – {mlabel(lb_metric)}", key="ts_lb_custom_title")
+    lb_highlight   = st.selectbox("Highlight team", ["(None)"] + team_options, key="ts_lb_highlight")
+
+# ── theme colours ──
+if lb_theme == "Light":
+    _LB_PBG="#ebebeb"; _LB_ABG="#ebebeb"; _LB_TXT="#111111"
+    _LB_GRID="#d7d7d7"; _LB_SPINE="#c8c8c8"; _LB_TICK="#111111"
+else:
+    _LB_PBG="#0a0f1c"; _LB_ABG="#0a0f1c"; _LB_TXT="#f5f5f5"
+    _LB_GRID="#3a4050"; _LB_SPINE="#6b7280"; _LB_TICK="#ffffff"
+
+# ── data ──
 if lb_metric not in df.columns:
     st.info("Metric not available.")
 else:
-    lb_df = df[["Team","League",lb_metric]].dropna(subset=[lb_metric]).copy()
-    lb_df[lb_metric] = pd.to_numeric(lb_df[lb_metric], errors="coerce")
-    lb_df = lb_df.dropna().sort_values(lb_metric, ascending=(lb_metric in INVERT_METRICS)).reset_index(drop=True)
-    lb_df = lb_df.head(lb_n)
+    _lb_asc = lb_metric in INVERT_METRICS
+    _lb_df = df[["Team","League",lb_metric]].dropna(subset=[lb_metric]).copy()
+    _lb_df[lb_metric] = pd.to_numeric(_lb_df[lb_metric], errors="coerce")
+    _lb_df = _lb_df.dropna().sort_values(lb_metric, ascending=_lb_asc).reset_index(drop=True).head(int(lb_n))
 
-    if lb_theme=="Light":
-        PBG="#ebebeb"; ABG="#ebebeb"; TXT="#111111"; GRID="#d7d7d7"; SPINE="#c8c8c8"
+    _lb_vals = _lb_df[lb_metric].values
+    if len(_lb_vals) > 1:
+        _vmin, _vmax = float(_lb_vals.min()), float(_lb_vals.max())
+        if _vmin == _vmax: _vmax = _vmin + 1e-6
+        _ts = (_lb_vals - _vmin) / (_vmax - _vmin)
     else:
-        PBG="#0a0f1c"; ABG="#0f151f"; TXT="#f5f5f5"; GRID="#3a4050"; SPINE="#6b7280"
+        _ts = np.zeros(len(_lb_vals))
+    if lb_rev: _ts = 1.0 - _ts
 
-    vals_lb = lb_df[lb_metric].values
-    vmin,vmax=(float(vals_lb.min()),float(vals_lb.max())) if len(vals_lb)>1 else (0.0,1.0)
-    if vmin==vmax: vmax=vmin+1e-6
-    ts_lb_arr = (vals_lb-vmin)/(vmax-vmin)
+    def _lb_cmap(palette, t):
+        def _ci(a, b, u): return (np.array(a,float) + (np.array(b,float)-np.array(a,float))*np.clip(u,0,1))/255.0
+        t = float(t)
+        if palette == "Red–Gold–Green (diverging)":
+            return _ci([199,54,60],[240,197,106],t/0.5) if t<=0.5 else _ci([240,197,106],[61,166,91],(t-0.5)/0.5)
+        if palette == "Light-grey → Black":        return _ci([210,214,220],[20,23,31],t)
+        if palette == "Light-Red → Dark-Red":      return _ci([252,190,190],[139,0,0],t)
+        if palette == "Light-Blue → Dark-Blue":    return _ci([191,210,255],[10,42,102],t)
+        if palette == "Light-Green → Dark-Green":  return _ci([196,235,203],[12,92,48],t)
+        if palette == "Purple ↔ Gold (diverging)":
+            return _ci([96,55,140],[180,150,210],t/0.5) if t<=0.5 else _ci([180,150,210],[240,197,106],(t-0.5)/0.5)
+        if palette == "All White":  return np.array([255,255,255])/255.0
+        if palette == "All Black":  return np.array([0,0,0])/255.0
+        if palette == "All Red":    return np.array([197,30,30])/255.0
+        if palette == "All Blue":   return np.array([15,70,180])/255.0
+        if palette == "All Green":  return np.array([20,120,60])/255.0
+        return np.array([0,0,0])/255.0
 
-    if lb_metric in INVERT_METRICS:
-        ts_lb_arr = 1.0 - ts_lb_arr
+    _lb_colors = [tuple(_lb_cmap(lb_palette, float(t))) for t in _ts]
 
-    TAB_R=np.array([199,54,60]); TAB_G=np.array([240,197,106]); TAB_GN=np.array([61,166,91])
+    fig_lb, ax_lb = plt.subplots(figsize=(11.5, 6.2))
+    fig_lb.patch.set_facecolor(_LB_PBG)
+    ax_lb.set_facecolor(_LB_ABG)
 
-    def lb_color(t: float):
-        t = float(np.clip(t, 0, 1))
-        if lb_palette == "Red–Gold–Green":
-            if t <= 0.5:
-                a, b2, t2 = TAB_R, TAB_G, t/0.5
-            else:
-                a, b2, t2 = TAB_G, TAB_GN, (t-0.5)/0.5
-            return tuple(np.clip(a+(b2-a)*t2, 0, 255)/255)
-        if lb_palette == "All Black":
-            return (0,0,0)
-        if lb_palette == "All Blue":
-            return (15/255,70/255,180/255)
-        if lb_palette == "Light→Dark Blue":
-            lo=np.array([191,210,255]); hi=np.array([10,42,102])
-            return tuple(np.clip(lo+(hi-lo)*t, 0, 255)/255)
-        return (0,0,0)
+    _ypos = np.arange(len(_lb_vals))
+    _bars = ax_lb.barh(_ypos, _lb_vals, color=_lb_colors, edgecolor="none", zorder=2)
 
-    bar_colors_lb = [lb_color(float(t)) for t in ts_lb_arr]
+    # Highlight selected team
+    if lb_highlight != "(None)":
+        for _bi, (_br, _brow) in enumerate(zip(_bars, _lb_df.itertuples())):
+            if _brow.Team == lb_highlight:
+                _br.set_color("#f59e0b"); _br.set_edgecolor("white")
+                _br.set_linewidth(1.6); _br.set_zorder(5)
 
-    fig_lb,ax_lb=plt.subplots(figsize=(11.5,6.2))
-    fig_lb.patch.set_facecolor(PBG); ax_lb.set_facecolor(ABG)
-    ypos=np.arange(len(vals_lb))
-    bars=ax_lb.barh(ypos, vals_lb, color=bar_colors_lb, edgecolor="none", zorder=2)
     ax_lb.invert_yaxis()
-    ytlabs=[f"{row['Team']} ({row['League']})" if show_team_names_lb else row["Team"] for _,row in lb_df.iterrows()]
-    ax_lb.set_yticks(ypos); ax_lb.set_yticklabels(ytlabs, fontsize=10, color=TXT)
-    ax_lb.set_xlabel(mlabel(lb_metric), color=TXT, fontsize=11, fontweight="semibold")
-    ax_lb.grid(axis="x", color=GRID, lw=0.8, zorder=1)
-    for s in ["top","right","left"]: ax_lb.spines[s].set_visible(False)
-    ax_lb.spines["bottom"].set_color(SPINE)
+    ax_lb.set_yticks(_ypos)
+    _ytlabs = [
+        f"{row['Team']},  {row['League']}" if lb_show_league else row["Team"]
+        for _, row in _lb_df.iterrows()
+    ]
+    ax_lb.set_yticklabels(_ytlabs, fontsize=10.5, color=_LB_TXT)
+    ax_lb.set_ylabel("")
+    ax_lb.set_xlabel(mlabel(lb_metric), color=_LB_TXT, labelpad=6, fontsize=10.5, fontweight="semibold")
+    ax_lb.grid(axis="x", color=_LB_GRID, linewidth=0.8, zorder=1)
+    for _s in ["top","right","left"]: ax_lb.spines[_s].set_visible(False)
+    ax_lb.spines["bottom"].set_color(_LB_SPINE)
     ax_lb.tick_params(axis="y", length=0)
-    for tick in ax_lb.get_xticklabels(): tick.set_color(TXT)
-    xmax=float(vals_lb.max())*1.12 if len(vals_lb) else 1
-    ax_lb.set_xlim(0,xmax)
-    pad=(ax_lb.get_xlim()[1]-ax_lb.get_xlim()[0])*0.012
-    for rect,v in zip(bars,vals_lb):
-        ax_lb.text(rect.get_width()+pad, rect.get_y()+rect.get_height()/2,
-                   f"{v:.2f}".rstrip("0").rstrip("."), va="center",ha="left",fontsize=8.5,color=TXT)
-    fig_lb.suptitle(f"Top {lb_n} — {mlabel(lb_metric)}", fontsize=22, fontweight="bold", color=TXT)
-    plt.subplots_adjust(left=0.3,right=0.96,bottom=0.14,top=0.90)
+
+    def _lb_fmt(x, _): return f"{x:,.0f}" if float(x).is_integer() else f"{x:,.2f}"
+    ax_lb.xaxis.set_major_formatter(_FuncFormatter(_lb_fmt))
+    for _tick in ax_lb.get_xticklabels():
+        _tick.set_fontweight("medium"); _tick.set_color(_LB_TICK)
+
+    _xmax = float(_lb_vals.max()) * 1.1 if len(_lb_vals) else 1.0
+    ax_lb.set_xlim(0, _xmax)
+    _pad_lb = (ax_lb.get_xlim()[1] - ax_lb.get_xlim()[0]) * 0.012
+    for _rect, _v in zip(_bars, _lb_vals):
+        ax_lb.text(_rect.get_width() + _pad_lb, _rect.get_y() + _rect.get_height()/2,
+                   _lb_fmt(_v, None), va="center", ha="left", fontsize=8.5, color=_LB_TXT)
+
+    _lb_title = lb_custom_title.strip() if (lb_show_title and lb_custom_title.strip()) \
+                else f"Top {len(_lb_df)} – {mlabel(lb_metric)}"
+    fig_lb.suptitle(_lb_title, fontsize=26, fontweight="bold", color=_LB_TXT, y=0.985)
+    plt.subplots_adjust(top=0.90, left=0.30, right=0.965, bottom=0.14)
+
     st.pyplot(fig_lb, use_container_width=True)
+    _buf_lb = io.BytesIO()
+    fig_lb.savefig(_buf_lb, format="png", dpi=200, bbox_inches="tight", facecolor=_LB_PBG)
+    st.download_button("⬇️ Download Leaderboard", _buf_lb.getvalue(),
+                       f"leaderboard_{lb_metric.replace(' ','_')}.png", "image/png")
     plt.close(fig_lb)
 
 st.markdown("---")
@@ -1248,53 +1302,218 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 # SECTION 7 – SCATTER
 # ══════════════════════════════════════════════════════
+import math as _math
+from matplotlib.ticker import MultipleLocator as _MLocator, FormatStrFormatter as _FmtStr
+from matplotlib import patheffects as _pe
+
 st.subheader("🔵 Scatter Chart")
+st.markdown("---")
 
-num_cols_sc = [c for c in NUMERIC_COLS if c in df.columns]
+_sc_num_cols = [c for c in NUMERIC_COLS if c in df.columns]
+
 with st.expander("Scatter settings", expanded=False):
-    sc_x = st.selectbox("X axis", num_cols_sc,
-                        index=num_cols_sc.index("xG p90") if "xG p90" in num_cols_sc else 0,
+    _sc_x_def = "xG p90" if "xG p90" in _sc_num_cols else _sc_num_cols[0]
+    _sc_y_def = "xG Against p90" if "xG Against p90" in _sc_num_cols else (_sc_num_cols[1] if len(_sc_num_cols)>1 else _sc_num_cols[0])
+    sc_x = st.selectbox("X axis", _sc_num_cols, index=_sc_num_cols.index(_sc_x_def),
                         format_func=mlabel, key="ts_sc_x")
-    sc_y = st.selectbox("Y axis", num_cols_sc,
-                        index=num_cols_sc.index("xG Against p90") if "xG Against p90" in num_cols_sc else 1,
+    sc_y = st.selectbox("Y axis", _sc_num_cols, index=_sc_num_cols.index(_sc_y_def),
                         format_func=mlabel, key="ts_sc_y")
-    sc_theme = st.radio("Theme",["Light","Dark"],horizontal=True,key="ts_sc_theme")
-    sc_labels = st.checkbox("Show labels", True, key="ts_sc_labels")
-    sc_medians = st.checkbox("Show medians", True, key="ts_sc_medians")
-    sc_size = st.slider("Point size",30,300,150,key="ts_sc_size")
+    sc_colour_metric = st.selectbox("Colour dots by", _sc_num_cols,
+                                    index=_sc_num_cols.index(_sc_x_def), format_func=mlabel, key="ts_sc_colour")
 
-PAGE_BG_SC="#ebebeb" if sc_theme=="Light" else "#0a0f1c"
-PLOT_BG_SC="#f3f3f3" if sc_theme=="Light" else "#0f151f"
-GRID_SC="#d7d7d7" if sc_theme=="Light" else "#3a4050"
-TXT_SC="#111111" if sc_theme=="Light" else "#f5f5f5"
-STROKE_SC="#ffffff" if sc_theme=="Light" else "#1e293b"
+    _sc_pal_opts = [
+        "Red–Gold–Green (diverging)", "Light-grey → Black",
+        "Light-Red → Dark-Red", "Light-Blue → Dark-Blue",
+        "Light-Green → Dark-Green", "Purple ↔ Gold (diverging)",
+        "All White", "All Black",
+    ]
+    sc_palette  = st.selectbox("Palette", _sc_pal_opts, index=_sc_pal_opts.index("All Black"), key="ts_sc_palette")
+    sc_rev      = st.checkbox("Reverse colours", False, key="ts_sc_rev")
+    sc_theme    = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_sc_theme")
 
-sc_df = df[["Team","League",sc_x,sc_y]].dropna(subset=[sc_x,sc_y]).copy()
-if sc_df.empty:
+    sc_show_labels  = st.toggle("Show team labels", True, key="ts_sc_labels")
+    sc_hl_team      = st.selectbox("Highlight team", ["(None)"] + team_options, key="ts_sc_hl")
+    sc_show_medians = st.checkbox("Show median lines", True, key="ts_sc_medians")
+    sc_shade_iqr    = st.checkbox("Shade IQR (25–75%)", True, key="ts_sc_iqr")
+    sc_point_size   = st.slider("Point size", 24, 300, 200, key="ts_sc_size")
+    sc_alpha        = st.slider("Point opacity", 0.2, 1.0, 0.88, 0.02, key="ts_sc_alpha")
+    sc_marker       = st.selectbox("Marker", ["o","s","^","D"], key="ts_sc_marker")
+    sc_tick_mode    = st.selectbox("Tick spacing", ["Auto","0.05","0.1","0.2","0.5","1.0"], key="ts_sc_tick")
+    sc_canvas       = st.selectbox("Canvas size", ["1280×720","1600×900","1920×820","1920×1080"], index=1, key="ts_sc_canvas")
+    sc_show_title   = st.checkbox("Show custom title", False, key="ts_sc_show_title")
+    sc_custom_title = st.text_input("Custom title", f"{mlabel(sc_x)} vs {mlabel(sc_y)}", key="ts_sc_title")
+    sc_top_gap      = st.slider("Top gap (px)", 0, 240, 80, 5, key="ts_sc_topgap")
+    sc_render_exact = st.checkbox("Render exact pixels (PNG)", True, key="ts_sc_exact")
+
+    # Include selected team (from Team Profile)
+    sc_include_sel  = st.toggle(f"Highlight selected team ({sel_team})", True, key="ts_sc_incl_sel")
+
+_sc_w, _sc_h = map(int, sc_canvas.replace("×","x").replace(" ","").split("x"))
+
+# ── theme ──
+_SC_PBG  = "#ebebeb" if sc_theme=="Light" else "#0a0f1c"
+_SC_ABG  = "#f3f3f3" if sc_theme=="Light" else "#0f151f"
+_SC_GRID = "#d7d7d7" if sc_theme=="Light" else "#3a4050"
+_SC_TXT  = "#111111" if sc_theme=="Light" else "#f5f5f5"
+_SC_STR  = "#ffffff" if sc_theme=="Light" else "#1e293b"
+
+def _sc_nice_step(vmin, vmax, target=6):
+    span = abs(vmax-vmin)
+    if span<=0 or not _math.isfinite(span): return 1.0
+    raw = span/max(target,2); pw = 10**_math.floor(_math.log10(raw)); m = raw/pw
+    if m<=1: k=1
+    elif m<=2: k=2
+    elif m<=2.5: k=2.5
+    elif m<=5: k=5
+    else: k=10
+    return k*pw
+
+def _sc_pad_lims(arr, pad=0.06, head=0.03):
+    a,b = float(np.nanmin(arr)), float(np.nanmax(arr))
+    if a==b: a-=1e-6; b+=1e-6
+    sp = b-a; pad_ = sp*pad
+    return a-pad_, b+pad_+sp*head
+
+def _sc_map_colors(cvals, palette, rev):
+    cmin,cmax = float(np.nanmin(cvals)), float(np.nanmax(cvals))
+    if cmin==cmax: cmax=cmin+1e-6
+    t = (cvals-cmin)/(cmax-cmin)
+    if rev: t = 1.0-t
+    def _ci(a,b,u): return (np.array(a,float)+(np.array(b,float)-np.array(a,float))*np.clip(u,0,1))/255.0
+    def _mc(palette, v):
+        if palette=="Red–Gold–Green (diverging)":
+            return _ci([199,54,60],[240,197,106],v/0.5) if v<=0.5 else _ci([240,197,106],[61,166,91],(v-0.5)/0.5)
+        if palette=="Light-grey → Black":        return _ci([210,214,220],[20,23,31],v)
+        if palette=="Light-Red → Dark-Red":      return _ci([252,190,190],[139,0,0],v)
+        if palette=="Light-Blue → Dark-Blue":    return _ci([191,210,255],[10,42,102],v)
+        if palette=="Light-Green → Dark-Green":  return _ci([196,235,203],[12,92,48],v)
+        if palette=="Purple ↔ Gold (diverging)":
+            return _ci([96,55,140],[180,150,210],v/0.5) if v<=0.5 else _ci([180,150,210],[240,197,106],(v-0.5)/0.5)
+        if palette=="All White": return np.array([255,255,255])/255.0
+        return np.array([0,0,0])/255.0
+    return [tuple(_mc(palette, float(v))) for v in t]
+
+_sc_pool = df[sc_x].notna() & df[sc_y].notna() & df[sc_colour_metric].notna()
+_sc_df   = df[_sc_pool].copy()
+for _c in [sc_x, sc_y, sc_colour_metric]:
+    _sc_df[_c] = pd.to_numeric(_sc_df[_c], errors="coerce")
+_sc_df = _sc_df.dropna(subset=[sc_x, sc_y, sc_colour_metric, "Team"])
+
+if _sc_df.empty:
     st.info("No data for selected metrics.")
 else:
-    fig_sc,ax_sc=plt.subplots(figsize=(14,8),dpi=100)
-    fig_sc.patch.set_facecolor(PAGE_BG_SC); ax_sc.set_facecolor(PLOT_BG_SC)
-    ax_sc.scatter(sc_df[sc_x], sc_df[sc_y], s=sc_size, color="#1D4ED8", alpha=0.75, edgecolors="none", zorder=2)
-    if sc_medians:
-        mx=float(sc_df[sc_x].median()); my=float(sc_df[sc_y].median())
-        mc="#000" if sc_theme=="Light" else "#fff"
-        ax_sc.axvline(mx,color=mc,ls=(0,(4,4)),lw=2,zorder=3)
-        ax_sc.axhline(my,color=mc,ls=(0,(4,4)),lw=2,zorder=3)
-    if sc_labels:
-        from matplotlib import patheffects as pe
-        for _,row in sc_df.iterrows():
-            t=ax_sc.annotate(row["Team"],(row[sc_x],row[sc_y]),xytext=(6,8),
-                textcoords="offset points",fontsize=8,color=TXT_SC,fontweight="semibold",zorder=5)
-            t.set_path_effects([pe.withStroke(linewidth=1.8,foreground=STROKE_SC,alpha=0.9)])
-    ax_sc.set_xlabel(mlabel(sc_x),color=TXT_SC,fontsize=13,fontweight="semibold")
-    ax_sc.set_ylabel(mlabel(sc_y),color=TXT_SC,fontsize=13,fontweight="semibold")
-    ax_sc.grid(True,color=GRID_SC,lw=0.8)
-    for s in ax_sc.spines.values(): s.set_color("#9ca3af")
-    for tick in ax_sc.get_xticklabels()+ax_sc.get_yticklabels(): tick.set_color(TXT_SC)
-    plt.tight_layout()
-    st.pyplot(fig_sc,use_container_width=True)
-    plt.close(fig_sc)
+    try:
+        _x_vals = _sc_df[sc_x].to_numpy(float)
+        _y_vals = _sc_df[sc_y].to_numpy(float)
+        _xlim   = _sc_pad_lims(_x_vals)
+        _ylim   = _sc_pad_lims(_y_vals)
+        _cvals  = _sc_df[sc_colour_metric].to_numpy(float)
+        _cols   = _sc_map_colors(_cvals, sc_palette, sc_rev)
+        _col_s  = pd.Series(_cols, index=_sc_df.index)
+
+        _sel_name = sel_team
+        _others   = _sc_df[_sc_df["Team"] != _sel_name] if sc_include_sel else _sc_df
+        _sel_df   = _sc_df[_sc_df["Team"] == _sel_name] if sc_include_sel else _sc_df.iloc[0:0]
+
+        plt.rcParams.update({"figure.dpi":100,"savefig.dpi":100,"text.antialiased":True})
+        fig_sc, ax_sc = plt.subplots(figsize=(_sc_w/100, _sc_h/100), dpi=100)
+        fig_sc.patch.set_facecolor(_SC_PBG)
+        ax_sc.set_facecolor(_SC_ABG)
+        ax_sc.set_xlim(*_xlim); ax_sc.set_ylim(*_ylim)
+
+        # All other teams
+        ax_sc.scatter(_others[sc_x], _others[sc_y], s=sc_point_size,
+                      c=list(_col_s.loc[_others.index]), alpha=float(sc_alpha),
+                      edgecolors="none", marker=sc_marker, zorder=2)
+
+        # Selected team (red outlined)
+        if not _sel_df.empty:
+            ax_sc.scatter(_sel_df[sc_x], _sel_df[sc_y], s=sc_point_size,
+                          c="#C81E1E", edgecolors="white", linewidths=1.8,
+                          marker=sc_marker, zorder=4)
+
+        # Highlighted team (amber)
+        if sc_hl_team != "(None)":
+            _hl = _sc_df[_sc_df["Team"] == sc_hl_team]
+            if not _hl.empty:
+                ax_sc.scatter(_hl[sc_x], _hl[sc_y], s=sc_point_size,
+                              c="#f59e0b", edgecolors="white", linewidths=1.6,
+                              marker=sc_marker, zorder=5)
+
+        # IQR shading
+        if sc_shade_iqr:
+            _xq1,_xq3 = np.nanpercentile(_x_vals,[25,75])
+            _yq1,_yq3 = np.nanpercentile(_y_vals,[25,75])
+            _iqr_c = "#cfd3da" if sc_theme=="Light" else "#9aa4b1"
+            ax_sc.axvspan(_xq1,_xq3,color=_iqr_c,alpha=0.25,zorder=1)
+            ax_sc.axhspan(_yq1,_yq3,color=_iqr_c,alpha=0.25,zorder=1)
+
+        # Medians
+        if sc_show_medians:
+            _mc2 = "#000000" if sc_theme=="Light" else "#ffffff"
+            ax_sc.axvline(float(np.nanmedian(_x_vals)),color=_mc2,ls=(0,(4,4)),lw=2.2,zorder=3)
+            ax_sc.axhline(float(np.nanmedian(_y_vals)),color=_mc2,ls=(0,(4,4)),lw=2.2,zorder=3)
+
+        # Axes
+        ax_sc.set_xlabel(mlabel(sc_x), fontsize=14, fontweight="semibold", color=_SC_TXT)
+        ax_sc.set_ylabel(mlabel(sc_y), fontsize=14, fontweight="semibold", color=_SC_TXT)
+
+        if sc_tick_mode == "Auto":
+            _sx = _sc_nice_step(*_xlim, target=12)
+            _sy = _sc_nice_step(*_ylim, target=12)
+        else:
+            _sx = _sy = float(sc_tick_mode)
+        ax_sc.xaxis.set_major_locator(_MLocator(base=_sx))
+        ax_sc.yaxis.set_major_locator(_MLocator(base=_sy))
+        def _sc_dec(s): return 0 if s>=1 else (1 if s>=0.1 else (2 if s>=0.01 else 3))
+        ax_sc.xaxis.set_major_formatter(_FmtStr(f"%.{_sc_dec(_sx)}f"))
+        ax_sc.yaxis.set_major_formatter(_FmtStr(f"%.{_sc_dec(_sy)}f"))
+        ax_sc.minorticks_off()
+        for _t in ax_sc.get_xticklabels()+ax_sc.get_yticklabels():
+            _t.set_fontweight("semibold"); _t.set_color(_SC_TXT)
+        ax_sc.grid(True, which="major", linewidth=0.9, color=_SC_GRID)
+        for _s in ax_sc.spines.values():
+            _s.set_linewidth(0.9)
+            _s.set_color("#9ca3af" if sc_theme=="Light" else "#6b7280")
+
+        # Top gap
+        _tgap_px = 75 if sc_show_title else sc_top_gap
+        _top_frac = 1.0 - (_tgap_px / float(_sc_h))
+        fig_sc.subplots_adjust(left=0.075, right=0.985, bottom=0.105, top=_top_frac)
+
+        # Custom title
+        if sc_show_title and sc_custom_title.strip():
+            _tc = "#111111" if sc_theme=="Light" else "#f5f5f5"
+            fig_sc.text(0.5, _top_frac+(1-_top_frac)*0.44, sc_custom_title.strip(),
+                        ha="center", va="center", color=_tc, fontsize=26, fontweight="semibold")
+
+        # Labels
+        if sc_show_labels:
+            for _, _lr in _sc_df.iterrows():
+                _lab = ax_sc.annotate(
+                    str(_lr["Team"]), (float(_lr[sc_x]), float(_lr[sc_y])),
+                    xytext=(8,10), textcoords="offset points",
+                    fontsize=9, fontweight="semibold", color=_SC_TXT,
+                    ha="left", va="bottom", zorder=6
+                )
+                _lab.set_path_effects([_pe.withStroke(linewidth=2.0, foreground=_SC_STR, alpha=0.9)])
+
+        if sc_render_exact:
+            _buf_sc = io.BytesIO()
+            fig_sc.savefig(_buf_sc, format="png", dpi=100, facecolor=fig_sc.get_facecolor(),
+                           bbox_inches=None, pad_inches=0)
+            _buf_sc.seek(0)
+            st.image(_buf_sc, width=_sc_w)
+        else:
+            st.pyplot(fig_sc, use_container_width=False)
+
+        _buf_sc2 = io.BytesIO()
+        fig_sc.savefig(_buf_sc2, format="png", dpi=150, facecolor=_SC_PBG, bbox_inches=None)
+        st.download_button("⬇️ Download Scatter", _buf_sc2.getvalue(),
+                           f"scatter_{mlabel(sc_x)}_vs_{mlabel(sc_y)}.png".replace(" ","_"), "image/png")
+        plt.close(fig_sc)
+    except Exception as _e:
+        st.info(f"Scatter error: {_e}")
 
 st.markdown("---")
 
@@ -1302,107 +1521,179 @@ st.markdown("---")
 # SECTION 8 – COMPARISON RADAR
 # ══════════════════════════════════════════════════════
 st.subheader("⚡ Team Comparison Radar")
+st.markdown("---")
 
 RADAR_COMP_METRICS = [
     "xG p90","Goals p90","Touches in Box p90",
     "xG Against p90","Goals Against p90","PPDA",
     "Possession %","Passes p90","Passes to Final Third p90",
-    "Long Passes p90","Points","Expected Points"
+    "Long Passes p90","Points p90","Expected Points p90",
 ]
+
+# Compute per-game versions of Points & xPoints if raw columns exist
+for _src, _dst in [("Points","Points p90"),("Expected Points","Expected Points p90")]:
+    if _src in df.columns and "Matches" in df.columns and _dst not in df.columns:
+        _matches = pd.to_numeric(df["Matches"], errors="coerce").replace(0, np.nan)
+        df[_dst] = pd.to_numeric(df[_src], errors="coerce") / _matches
+    elif _src in df.columns and _dst not in df.columns:
+        df[_dst] = pd.to_numeric(df[_src], errors="coerce")
+
 radar_comp_avail = [m for m in RADAR_COMP_METRICS if m in df.columns]
 
 with st.expander("Radar settings", expanded=False):
-    comp_theme = st.radio("Theme",["Light","Dark"],horizontal=True,key="ts_comp_theme")
+    comp_theme  = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_comp_theme")
+    # Team A defaults to sel_team from Team Profile
+    _comp_a_idx = team_options.index(sel_team) if sel_team in team_options else 0
+    _comp_b_opts= [t for t in team_options if t != sel_team]
+    comp_team_a_label = st.text_input("Edit Team A label", sel_team, key="ts_comp_a_label")
+    comp_team_b_label_default = _comp_b_opts[0] if _comp_b_opts else ""
+    comp_team_b_sel   = st.selectbox("Team B (blue)", _comp_b_opts, key="ts_comp_b")
+    comp_team_b_label = st.text_input("Edit Team B label", comp_team_b_sel, key="ts_comp_b_label")
+    comp_show_title   = st.checkbox("Show custom title", False, key="ts_comp_show_title")
+    comp_custom_title = st.text_input("Custom title", "", key="ts_comp_custom_title")
 
-if comp_theme=="Dark":
-    PBG_C="#0a0f1c"; AX_C="#0a0f1c"; LABEL_C_R="#f5f5f5"; TICK_C="#e5e7eb"; MINS_C="#f5f5f5"
-    RING_IN="#3a4050"; RING_OUT="#cbd5e1"
+# Theme colours (matching player radar exactly)
+if comp_theme == "Dark":
+    _CR_PBG="#0a0f1c"; _CR_AX="#0a0f1c"
+    _CR_BAND_OUT="#162235"; _CR_BAND_IN="#0d1524"
+    _CR_RING_IN="#3a4050"; _CR_RING_OUT="#cbd5e1"
+    _CR_LABEL="#f5f5f5"; _CR_TICK="#e5e7eb"; _CR_MINS="#f5f5f5"
 else:
-    PBG_C="#ffffff"; AX_C="#ebebeb"; LABEL_C_R="#0f172a"; TICK_C="#6b7280"; MINS_C="#374151"
-    RING_IN=RING_OUT="#d1d5db"
+    _CR_PBG="#ffffff"; _CR_AX="#ebebeb"
+    _CR_BAND_OUT="#e5e7eb"; _CR_BAND_IN="#ffffff"
+    _CR_RING_IN="#d1d5db"; _CR_RING_OUT="#d1d5db"
+    _CR_LABEL="#0f172a"; _CR_TICK="#6b7280"; _CR_MINS="#374151"
 
-team_a = st.selectbox("Team A (red)", team_options, key="ts_comp_a")
-team_b = st.selectbox("Team B (blue)", [t for t in team_options if t!=team_a], key="ts_comp_b")
+team_a = sel_team
+team_b = comp_team_b_sel
 
 row_a = df[df["Team"]==team_a].iloc[0] if not df[df["Team"]==team_a].empty else None
 row_b = df[df["Team"]==team_b].iloc[0] if not df[df["Team"]==team_b].empty else None
 
-if row_a is not None and row_b is not None:
-    leagues_ab = {str(row_a.get("League","")), str(row_b.get("League",""))}
-    pool_ab = df[df["League"].isin(leagues_ab)]
+if row_a is not None and row_b is not None and radar_comp_avail:
+    _leagues_ab = {str(row_a.get("League","")), str(row_b.get("League",""))}
+    _pool_ab    = df[df["League"].isin(_leagues_ab)].copy()
+    for _m in radar_comp_avail:
+        _pool_ab[_m] = pd.to_numeric(_pool_ab[_m], errors="coerce")
 
-    def pct_ab(t_row, col):
+    def _pct_ab(t_row, col):
         inv = col in INVERT_METRICS
-        if col not in pool_ab.columns: return 50.0
-        s = pd.to_numeric(pool_ab[col], errors="coerce").dropna()
+        if col not in _pool_ab.columns: return 50.0
+        s = pd.to_numeric(_pool_ab[col], errors="coerce").dropna()
         v = float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 50.0
         p = (s<v).mean()*100 + (s==v).mean()*50
-        return float(np.clip((100-p) if inv else p,0,100))
+        return float(np.clip((100-p) if inv else p, 0, 100))
 
-    A_r = np.array([pct_ab(row_a,m) for m in radar_comp_avail])
-    B_r = np.array([pct_ab(row_b,m) for m in radar_comp_avail])
-    labels_c = [mlabel(m) for m in radar_comp_avail]
+    def _actual_val(t_row, col):
+        """Return actual value formatted to 2dp for display on ring ticks."""
+        v = t_row.get(col, np.nan) if hasattr(t_row, 'get') else t_row[col]
+        try: v = float(v)
+        except: return "—"
+        return f"{v:.2f}".rstrip("0").rstrip(".")
 
-    N_c=len(radar_comp_avail)
-    theta_c=np.linspace(0,2*np.pi,N_c,endpoint=False)
-    theta_cc=np.concatenate([theta_c,theta_c[:1]])
-    Ar_c=np.concatenate([A_r,A_r[:1]]); Br_c=np.concatenate([B_r,B_r[:1]])
+    A_r = np.array([_pct_ab(row_a, m) for m in radar_comp_avail])
+    B_r = np.array([_pct_ab(row_b, m) for m in radar_comp_avail])
 
-    COL_A="#C81E1E"; COL_B="#1D4ED8"
-    FILL_A=(200/255,30/255,30/255,0.55); FILL_B=(29/255,78/255,216/255,0.55)
-    INNER_HOLE=10
+    # Actual values for tick labels (show real values, plotted by percentile)
+    A_actual = [_actual_val(row_a, m) for m in radar_comp_avail]
+    B_actual = [_actual_val(row_b, m) for m in radar_comp_avail]
 
-    fig_c=plt.figure(figsize=(13.2,8.0),dpi=220)
-    fig_c.patch.set_facecolor(PBG_C)
-    ax_c=plt.subplot(111,polar=True); ax_c.set_facecolor(AX_C)
+    _labels_c = [mlabel(m) for m in radar_comp_avail]
+    _N_c      = len(radar_comp_avail)
+    _theta_c  = np.linspace(0, 2*np.pi, _N_c, endpoint=False)
+    _theta_cc = np.concatenate([_theta_c, _theta_c[:1]])
+    _Ar_c     = np.concatenate([A_r, A_r[:1]])
+    _Br_c     = np.concatenate([B_r, B_r[:1]])
+
+    _COL_A="#C81E1E"; _COL_B="#1D4ED8"
+    _FILL_A=(200/255,30/255,30/255,0.60); _FILL_B=(29/255,78/255,216/255,0.60)
+    _INNER=10; _RING_LW=1.0; _OUTER_R=107
+
+    # TRUE decile values per metric (for ring tick labels)
+    _qs = np.linspace(0,100,11)
+    _axis_ticks = [np.nanpercentile(_pool_ab[m].dropna().values, _qs) for m in radar_comp_avail]
+
+    fig_c = plt.figure(figsize=(13.2, 8.0), dpi=260)
+    fig_c.patch.set_facecolor(_CR_PBG)
+    ax_c = plt.subplot(111, polar=True)
+    ax_c.set_facecolor(_CR_AX)
     ax_c.set_theta_offset(np.pi/2); ax_c.set_theta_direction(-1)
-    ax_c.set_xticks(theta_c); ax_c.set_xticklabels([])
+    ax_c.set_xticks(_theta_c); ax_c.set_xticklabels([])
     ax_c.set_yticks([]); ax_c.grid(False)
-    for s in ax_c.spines.values(): s.set_visible(False)
+    for _s in ax_c.spines.values(): _s.set_visible(False)
 
-    ring_edges=np.linspace(INNER_HOLE,100,11)
-    for i in range(10):
-        r0,r1=ring_edges[i],ring_edges[i+1]
-        band="#162235" if ((9-i)%2==0 and comp_theme=="Dark") else ("#e5e7eb" if (9-i)%2==0 else AX_C)
-        ax_c.add_artist(mpatches.Wedge((0,0),r1,0,360,width=(r1-r0),
-            transform=ax_c.transData._b,facecolor=band,edgecolor="none",zorder=0.8))
+    # Alternating radial bands
+    _ring_edges = np.linspace(_INNER, 100, 11)
+    for _i in range(10):
+        _r0,_r1 = _ring_edges[_i], _ring_edges[_i+1]
+        _band = _CR_BAND_OUT if (9-_i)%2==0 else _CR_BAND_IN
+        ax_c.add_artist(mpatches.Wedge((0,0),_r1,0,360,width=(_r1-_r0),
+            transform=ax_c.transData._b,facecolor=_band,edgecolor="none",zorder=0.8))
 
-    ring_t=np.linspace(0,2*np.pi,361)
-    for j,r in enumerate(ring_edges):
-        col=RING_OUT if j==len(ring_edges)-1 else RING_IN
-        ax_c.plot(ring_t,np.full_like(ring_t,r),color=col,lw=1.0,zorder=0.9)
+    # Ring outlines
+    _ring_t = np.linspace(0, 2*np.pi, 361)
+    for _j, _r in enumerate(_ring_edges):
+        _rc = _CR_RING_OUT if _j==len(_ring_edges)-1 else _CR_RING_IN
+        ax_c.plot(_ring_t, np.full_like(_ring_t,_r), color=_rc, lw=_RING_LW, zorder=0.9)
 
-    for i,ang in enumerate(theta_c):
-        for rr in ring_edges[2:]:
-            pct_val=int(round((rr-INNER_HOLE)/(100-INNER_HOLE)*100))
-            ax_c.text(ang,rr-1.8,f"{pct_val}",ha="center",va="center",fontsize=6,color=TICK_C,zorder=1.1)
+    # Actual value tick labels at each ring (decile values from pool)
+    for _i, _ang in enumerate(_theta_c):
+        _tv = _axis_ticks[_i]
+        for _rr, _v in zip(_ring_edges[2:], _tv[2:]):
+            ax_c.text(_ang, _rr-1.8, f"{float(_v):.1f}",
+                      ha="center", va="center", fontsize=7, color=_CR_TICK, zorder=1.1)
 
-    OUTER_R=107
-    for ang,lab in zip(theta_c,labels_c):
-        rot=np.degrees(ax_c.get_theta_direction()*ang+ax_c.get_theta_offset())-90
-        rn=((rot+180)%360)-180
-        if rn>90 or rn<-90: rot+=180
-        ax_c.text(ang,OUTER_R,lab,rotation=rot,rotation_mode="anchor",
-                  ha="center",va="center",fontsize=9,color=LABEL_C_R,fontweight=600,clip_on=False,zorder=2.2)
+    # Outer metric labels (upright, centered)
+    for _ang, _lab in zip(_theta_c, _labels_c):
+        _rot = np.degrees(ax_c.get_theta_direction()*_ang + ax_c.get_theta_offset()) - 90.0
+        _rn  = ((_rot+180)%360)-180
+        if _rn>90 or _rn<-90: _rot+=180
+        ax_c.text(_ang, _OUTER_R, _lab, rotation=_rot, rotation_mode="anchor",
+                  ha="center", va="center", fontsize=9, color=_CR_LABEL,
+                  fontweight=600, clip_on=False, zorder=2.2)
 
-    ax_c.add_artist(plt.Circle((0,0),radius=INNER_HOLE-0.6,transform=ax_c.transData._b,
-                               color=PBG_C,zorder=1.2,ec="none"))
-    ax_c.plot(theta_cc,Ar_c,color=COL_A,lw=2.2,zorder=3)
-    ax_c.fill(theta_cc,Ar_c,color=FILL_A,zorder=2.5)
-    ax_c.plot(theta_cc,Br_c,color=COL_B,lw=2.2,zorder=3)
-    ax_c.fill(theta_cc,Br_c,color=FILL_B,zorder=2.5)
-    ax_c.set_rlim(0,100)
+    # Center hole
+    ax_c.add_artist(plt.Circle((0,0), radius=_INNER-0.6, transform=ax_c.transData._b,
+                               color=_CR_PBG, zorder=1.2, ec="none"))
 
-    fig_c.text(0.12,0.96,team_a,color=COL_A,fontsize=22,fontweight="bold",ha="left")
-    fig_c.text(0.12,0.935,str(row_a.get("League","")),color=COL_A,fontsize=11,ha="left")
-    fig_c.text(0.88,0.96,team_b,color=COL_B,fontsize=22,fontweight="bold",ha="right")
-    fig_c.text(0.88,0.935,str(row_b.get("League","")),color=COL_B,fontsize=11,ha="right")
+    # Polygons
+    ax_c.plot(_theta_cc, _Ar_c, color=_COL_A, lw=2.2, zorder=3)
+    ax_c.fill(_theta_cc, _Ar_c, color=_FILL_A, zorder=2.5)
+    ax_c.plot(_theta_cc, _Br_c, color=_COL_B, lw=2.2, zorder=3)
+    ax_c.fill(_theta_cc, _Br_c, color=_FILL_B, zorder=2.5)
+    ax_c.set_rlim(0, 100)
 
+    # Actual value dots on each team's polygon
+    for _i, (_ang, _av_a, _av_b) in enumerate(zip(_theta_c, A_actual, B_actual)):
+        _pa = A_r[_i]; _pb = B_r[_i]
+        ax_c.plot(_ang, _pa, 'o', color=_COL_A, markersize=4, zorder=4)
+        ax_c.plot(_ang, _pb, 'o', color=_COL_B, markersize=4, zorder=4)
+
+    # Headers (editable labels)
+    _sub_a = f"{row_a.get('League','') if hasattr(row_a,'get') else row_a['League']}"
+    _sub_b = f"{row_b.get('League','') if hasattr(row_b,'get') else row_b['League']}"
+    _ppg_a = f"{float(row_a.get('Points p90', row_a.get('Points','?'))):.2f} pts/g" if "Points p90" in df.columns else ""
+    _ppg_b = f"{float(row_b.get('Points p90', row_b.get('Points','?'))):.2f} pts/g" if "Points p90" in df.columns else ""
+
+    fig_c.text(0.12, 0.96,  comp_team_a_label, color=_COL_A, fontsize=22, fontweight="bold",  ha="left")
+    fig_c.text(0.12, 0.935, _sub_a,            color=_COL_A, fontsize=11, ha="left")
+    fig_c.text(0.12, 0.915, _ppg_a,            color=_CR_MINS, fontsize=10, ha="left")
+    fig_c.text(0.88, 0.96,  comp_team_b_label, color=_COL_B, fontsize=22, fontweight="bold",  ha="right")
+    fig_c.text(0.88, 0.935, _sub_b,            color=_COL_B, fontsize=11, ha="right")
+    fig_c.text(0.88, 0.915, _ppg_b,            color=_CR_MINS, fontsize=10, ha="right")
+
+    if comp_show_title and comp_custom_title.strip():
+        fig_c.text(0.5, 0.985, comp_custom_title.strip(), ha="center", fontsize=16,
+                   fontweight="bold", color=_CR_LABEL)
+
+    st.caption("Ring labels show **actual dataset values at each decile** (20th–100th percentile). "
+               "Polygons are plotted by **percentile rank** vs the combined league pool.")
     st.pyplot(fig_c, use_container_width=True)
-    buf_c=io.BytesIO(); fig_c.savefig(buf_c,format="png",dpi=220,facecolor=PBG_C)
-    st.download_button("⬇️ Download Comparison Radar", buf_c.getvalue(),
-                       f"comparison_{team_a.replace(' ','_')}_vs_{team_b.replace(' ','_')}.png","image/png")
+    _buf_c = io.BytesIO()
+    fig_c.savefig(_buf_c, format="png", dpi=220, facecolor=_CR_PBG)
+    st.download_button("⬇️ Download Comparison Radar", _buf_c.getvalue(),
+                       f"comparison_{team_a.replace(' ','_')}_vs_{team_b.replace(' ','_')}.png", "image/png")
     plt.close(fig_c)
 else:
-    st.info("Select two teams above.")
+    st.info("Select two teams with available data.")
