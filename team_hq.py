@@ -840,10 +840,18 @@ else:
 
     # ── Scores table with diverging 0-100 colour ──
     st.markdown("**Scores:**")
+
+    def _safe_score(row, key):
+        try:
+            v = row[key]
+            return float(v) if pd.notna(v) else np.nan
+        except Exception:
+            return np.nan
+
     score_data = {
         "Score": ["OVR","ATT","DEF","POS"],
-        "Value": [team_row.get("OVR",np.nan), team_row.get("ATT",np.nan),
-                  team_row.get("DEF",np.nan), team_row.get("POS",np.nan)]
+        "Value": [_safe_score(team_row, "OVR"), _safe_score(team_row, "ATT"),
+                  _safe_score(team_row, "DEF"), _safe_score(team_row, "POS")]
     }
     sdf = pd.DataFrame(score_data).set_index("Score")
 
@@ -951,7 +959,7 @@ else:
     TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
 
     # Editable footer
-    footer_text_f = st.text_input("Footer text (optional)", f"{sel_team_f} — {t_league_f}",
+    footer_text_f = st.text_input("Footer text (optional)", "Percentile Rank",
                                    key="ts_f_footer")
 
     def blend(c1,c2,t):
@@ -1097,7 +1105,7 @@ else:
         sep = (rot_angles_y[i] - bar_w_y / 2) % (2*np.pi)
         is_cross = any(np.isclose(sep, a, atol=0.01) for a in [0, np.pi/2, np.pi, 3*np.pi/2])
         ax_y.plot([sep, sep], [0, 100],
-                  color='white' if is_cross else 'rgba(255,255,255,0.3)',
+                  color=(1, 1, 1, 1.0) if is_cross else (1, 1, 1, 0.25),
                   linewidth=1.8 if is_cross else 1, zorder=4)
 
     # Reference rings
