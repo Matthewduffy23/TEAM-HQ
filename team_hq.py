@@ -1722,3 +1722,156 @@ if row_a is not None and row_b is not None and radar_comp_avail:
     plt.close(fig_c)
 else:
     st.info("Select two teams with available data.")
+
+st.markdown("---")
+
+# ══════════════════════════════════════════════════════
+# SECTION 9 – SIMILAR TEAMS
+# ══════════════════════════════════════════════════════
+st.subheader("🧭 Similar Teams")
+st.markdown("---")
+
+# ── Feature basket with default weights ──
+SIM_TEAM_FEATURES = [
+    ("Crosses p90",               2),
+    ("Goals p90",                 2),
+    ("xG p90",                    3),
+    ("Touches in Box p90",        3),
+    ("Goals Against p90",         2),
+    ("xG Against p90",            3),
+    ("Defensive Duels p90",       1),
+    ("PPDA",                      4),
+    ("Possession %",              4),
+    ("Passes p90",                4),
+    ("Pass Accuracy %",           4),
+    ("Long Passes p90",           4),
+    ("Long Pass Accuracy %",      1),
+    ("Passes to Final Third p90", 2),
+    ("Progressive Passes p90",    1),
+    ("Progressive Runs p90",      1),
+]
+
+# Only keep features that exist in the dataset
+SIM_TEAM_AVAIL = [(f, w) for f, w in SIM_TEAM_FEATURES if f in df.columns]
+SIM_TEAM_COLS  = [f for f, _ in SIM_TEAM_AVAIL]
+SIM_TEAM_W_DEF = {f: w for f, w in SIM_TEAM_AVAIL}
+
+with st.expander("Similar Teams settings", expanded=False):
+    # League pool
+    _st_all_leagues = sorted(df["League"].dropna().unique().tolist())
+    _st_league_default = [team_league] if team_league in _st_all_leagues else _st_all_leagues[:1]
+    st_leagues = st.multiselect(
+        "Candidate league pool", _st_all_leagues,
+        default=_st_league_default,
+        key=f"ts_sim_leagues_{sel_team}",
+    )
+
+    # Blending
+    st_pct_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key="ts_sim_pw")
+
+    # Top N
+    st_top_n = st.number_input("Show top N", min_value=5, max_value=100, value=20, step=5, key="ts_sim_topn")
+
+    # Advanced weights
+    with st.expander("Advanced feature weights (1–5)", expanded=False):
+        st_adv_weights = {}
+        for _f, _wd in SIM_TEAM_AVAIL:
+            _wk = "ts_simw_" + _f.replace(" ","_").replace("%","pct").replace(",","").replace(".","_")
+            st_adv_weights[_f] = st.slider(f"{mlabel(_f)}", 1, 5, _wd, key=_wk)
+
+# ── Computation ──
+_sim_target_rows = df[df["Team"] == sel_team]
+if _sim_target_rows.empty or not SIM_TEAM_COLS:
+    st.info("Select a team above and ensure metric columns are present.")
+else:
+    try:
+        from sklearn.preprocessing import StandardScaler as _STScaler
+
+        _sim_target = _sim_target_rows.iloc[0]
+        _sim_target_league = str(_sim_target.get("League", ""))
+
+        # Candidate pool
+        _st_pool = df[df["League"].isin(st_leagues)].copy() if st_leagues else df.copy()
+
+        # Ensure numeric
+        for _f in SIM_TEAM_COLS:
+            _st_pool[_f] = pd.to_numeric(_st_pool[_f], errors="coerce")
+
+        _st_pool = _st_pool.dropna(subset=SIM_TEAM_COLS)
+        _st_pool = _st_pool[_st_pool["Team"] != sel_team].reset_index(drop=True)
+
+        if _st_pool.empty:
+            st.info("No candidate teams after filters.")
+        else:
+            _weights_vec = np.array([float(st_adv_weights.get(_f, SIM_TEAM_W_DEF.get(_f, 1))) for _f in SIM_TEAM_COLS], dtype=float)
+
+            # Target percentiles vs its own league
+            _tgt_league_pool = df[df["League"] == _sim_target_league][SIM_TEAM_COLS].apply(pd.to_numeric, errors="coerce")
+            _tgt_ranks = _tgt_league_pool.rank(pct=True)
+            _tgt_idx_mask = df["League"].eq(_sim_target_league) & df["Team"].eq(sel_team)
+
+            if _tgt_idx_mask.any():
+                # Re-rank within league pool (same index space)
+                _full_league = df[df["League"] == _sim_target_league].copy()
+                for _f in SIM_TEAM_COLS:
+                    _full_league[_f] = pd.to_numeric(_full_league[_f], errors="coerce")
+                _tgt_pct_vec = _full_league[SIM_TEAM_COLS].rank(pct=True).loc[
+                    df[df["League"].eq(_sim_target_league) & df["Team"].eq(sel_team)].index
+                ].mean(axis=0).values
+            else:
+                _tgt_pct_vec = np.full(len(SIM_TEAM_COLS), 0.5)
+
+            # Candidate percentiles (per-league)
+            _cand_pct = _st_pool.groupby("League")[SIM_TEAM_COLS].rank(pct=True).values
+
+            # Standardise actual values
+            _scaler = _STScaler()
+            _cand_std = _scaler.fit_transform(_st_pool[SIM_TEAM_COLS])
+            _tgt_actual = np.array([float(_sim_target[_f]) if pd.notna(_sim_target.get(_f)) else 0.0 for _f in SIM_TEAM_COLS])
+            _tgt_std = _scaler.transform([_tgt_actual])
+
+            # Distances
+            _pct_dist  = np.linalg.norm((_cand_pct - _tgt_pct_vec) * _weights_vec, axis=1)
+            _act_dist  = np.linalg.norm((_cand_std - _tgt_std) * _weights_vec, axis=1)
+            _combined  = _pct_dist * float(st_pct_weight) + _act_dist * (1.0 - float(st_pct_weight))
+
+            # Normalise → similarity 0–100
+            _arr = np.asarray(_combined, dtype=float).ravel()
+            _rng = np.ptp(_arr)
+            _norm = (_arr - _arr.min()) / (_rng if _rng != 0 else 1.0)
+            _sims = ((1.0 - _norm) * 100.0).round(1)
+
+            _out = _st_pool[["Team","League"]].copy()
+            _out["Similarity"] = _sims
+            _out = _out.sort_values("Similarity", ascending=False).reset_index(drop=True)
+            _out.insert(0, "Rank", np.arange(1, len(_out)+1))
+
+            # Add key metric values for context
+            for _f in ["xG p90","xG Against p90","PPDA","Possession %","Passes p90"]:
+                if _f in _st_pool.columns:
+                    _out[mlabel(_f)] = _st_pool[_f].values
+
+            st.caption(f"Comparing **{sel_team}** against {len(_out):,} candidate teams across {len(SIM_TEAM_COLS)} metrics.")
+
+            # Styled similarity column
+            def _sim_color(v):
+                try: v = float(v)
+                except: return ""
+                v = np.clip(v, 0, 100)
+                if v >= 80:   return "background-color:#166534;color:#fff"
+                elif v >= 65: return "background-color:#15803d;color:#fff"
+                elif v >= 50: return "background-color:#4d7c0f;color:#fff"
+                elif v >= 35: return "background-color:#ca8a04;color:#000"
+                else:         return "background-color:#b91c1c;color:#fff"
+
+            try:
+                _styled = _out.head(int(st_top_n)).style.map(_sim_color, subset=["Similarity"])
+            except AttributeError:
+                _styled = _out.head(int(st_top_n)).style.applymap(_sim_color, subset=["Similarity"])
+
+            st.dataframe(_styled.format({"Similarity": "{:.1f}"}), use_container_width=True)
+
+    except ImportError:
+        st.warning("scikit-learn is required for similarity search. Run: `pip install scikit-learn`")
+    except Exception as _sim_err:
+        st.info(f"Similarity error: {_sim_err}")
