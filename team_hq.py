@@ -385,32 +385,20 @@ if display_league_filter != "All leagues":
 team_options = sorted(df["Team"].dropna().unique().tolist())
 
 # ─────────────────────────────────────────────
-# MASTER TEAM SELECTOR
+# MASTER TEAM SELECTOR — single source of truth
 # ─────────────────────────────────────────────
-st.markdown("### 🔍 Team Selection")
-st.caption("Selecting a team here drives Team Profile, Feature F, and Feature Y automatically.")
-
-# Build team→league lookup
 team_league_map = df.set_index("Team")["League"].to_dict() if "League" in df.columns else {}
 
-def _on_master_team_change():
-    new_team = st.session_state["ts_master_team"]
-    new_league = team_league_map.get(new_team, "")
-    # Reset all per-section comp pools to own league
-    if new_league:
-        st.session_state["ts_profile_comp_leagues"] = [new_league]
-        st.session_state["ts_y_comp"] = [new_league]
-    # Sync individual selectors
-    st.session_state["ts_profile_team"] = new_team
-    st.session_state["ts_f_team"] = new_team
-    st.session_state["ts_y_team"] = new_team
+st.markdown("### 🔍 Team Selection")
+st.caption("Selecting a team here drives Team Profile, Feature F, and Feature Y.")
 
-master_team = st.selectbox(
-    "Select team (syncs all sections below)",
-    team_options,
-    key="ts_master_team",
-    on_change=_on_master_team_change,
-)
+master_team = st.selectbox("Select team", team_options, key="ts_master_team")
+master_league = team_league_map.get(master_team, "")
+
+# Seed title/subtitle on very first load
+if "ts_profile_title" not in st.session_state:
+    st.session_state["ts_profile_title"]    = f"{master_team} Style & Performance"
+    st.session_state["ts_profile_subtitle"] = f"Percentile Scores vs {master_league}"
 
 # ─────────────────────────────────────────────
 # BADGE / FLAG HELPERS
@@ -714,39 +702,53 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🎯 Team Profile")
 
-# Default to master team selection
-_profile_default_idx = team_options.index(master_team) if master_team in team_options else 0
-sel_team = st.selectbox("Select team", team_options, index=_profile_default_idx, key="ts_profile_team")
+sel_team = master_team
 team_row = df[df["Team"] == sel_team]
 if team_row.empty:
-    st.info("Team not found.")
+    st.info("Team not found in current filter.")
 else:
     team_row = team_row.iloc[0]
-    team_league = str(team_row["League"]) if "League" in team_row.index else ""
+    team_league = str(team_row["League"]) if "League" in team_row.index else master_league
 
-    # Auto-default comp_leagues to own league when team changes
-    _prof_comp_default = st.session_state.get("ts_profile_comp_leagues", [team_league])
-    # If the stored default no longer matches current team's league, reset it
-    if _prof_comp_default and team_league and _prof_comp_default != [team_league]:
-        # Only auto-reset if the session state was set by master selector
-        pass  # keep user's manual choice
+    _avail_leagues = sorted(df["League"].dropna().unique())
+
+    # Detect when team has changed so we can reset the comp pool
+    _prev_team = st.session_state.get("_profile_prev_team", None)
+    _team_changed = (_prev_team != sel_team)
+    if _team_changed:
+        st.session_state["_profile_prev_team"] = sel_team
+        st.session_state["_profile_comp_override"] = [team_league]
+        st.session_state["ts_profile_title"]    = f"{sel_team} Style & Performance"
+        st.session_state["ts_profile_subtitle"] = f"Percentile Scores vs {team_league}"
+
+    _comp_default = st.session_state.get("_profile_comp_override", [team_league])
+    _comp_default = [lg for lg in _comp_default if lg in _avail_leagues] or [team_league]
 
     comp_leagues = st.multiselect(
         "Comparison pool (default = own league)",
-        sorted(df["League"].dropna().unique()),
-        default=_prof_comp_default if _prof_comp_default else [team_league],
-        key="ts_profile_comp_leagues"
+        _avail_leagues,
+        default=_comp_default,
+        key="ts_profile_comp_leagues",
     )
+    # Persist user's manual changes
+    st.session_state["_profile_comp_override"] = comp_leagues
+
     pool = df[df["League"].isin(comp_leagues)] if comp_leagues else df[df["League"] == team_league]
 
-    # Editable title & subtitle
-    _default_title = f"{sel_team} Style & Performance"
+    # Editable title & subtitle — always seeded fresh from current team/league
+    _default_title    = f"{sel_team} Style & Performance"
     _default_subtitle = f"Percentile Scores vs {', '.join(comp_leagues) if comp_leagues else team_league}"
+
     c_title, c_sub = st.columns(2)
     with c_title:
-        profile_title = st.text_input("Chart title", value=_default_title, key="ts_profile_title")
+        profile_title = st.text_input("Chart title", key="ts_profile_title")
     with c_sub:
-        profile_subtitle = st.text_input("Chart subtitle", value=_default_subtitle, key="ts_profile_subtitle")
+        profile_subtitle = st.text_input("Chart subtitle", key="ts_profile_subtitle")
+
+    if not profile_title.strip():
+        profile_title = _default_title
+    if not profile_subtitle.strip():
+        profile_subtitle = _default_subtitle
 
     RADAR_METRICS_TEAM = [
         "xG p90", "Goals p90", "Touches in Box p90",
@@ -947,9 +949,7 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("📋 Feature F — Team Percentile Board")
 
-sel_team_f = st.selectbox("Select team", team_options,
-                          index=team_options.index(master_team) if master_team in team_options else 0,
-                          key="ts_f_team")
+sel_team_f = master_team
 t_row_f = df[df["Team"] == sel_team_f]
 if t_row_f.empty:
     st.info("Team not found.")
@@ -1087,20 +1087,28 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🌀 Feature Y — Team Polar Radar")
 
-sel_team_y = st.selectbox("Select team", team_options,
-                          index=team_options.index(master_team) if master_team in team_options else 0,
-                          key="ts_y_team")
+sel_team_y = master_team
 t_row_y = df[df["Team"] == sel_team_y]
 if t_row_y.empty:
     st.info("Team not found.")
 else:
     t_row_y = t_row_y.iloc[0]
-    t_league_y = str(t_row_y.get("League",""))
+    t_league_y = str(t_row_y["League"]) if "League" in t_row_y.index else master_league
+
+    _prev_team_y = st.session_state.get("_y_prev_team", None)
+    if _prev_team_y != sel_team_y:
+        st.session_state["_y_prev_team"] = sel_team_y
+        st.session_state["_y_comp_override"] = [t_league_y]
+
+    _comp_y_default = st.session_state.get("_y_comp_override", [t_league_y])
+    _avail_y = sorted(df["League"].dropna().unique())
+    _comp_y_default = [lg for lg in _comp_y_default if lg in _avail_y] or [t_league_y]
 
     comp_y = st.multiselect(
-        "Comparison pool", sorted(df["League"].dropna().unique()),
-        default=[t_league_y], key="ts_y_comp"
+        "Comparison pool", _avail_y,
+        default=_comp_y_default, key="ts_y_comp"
     )
+    st.session_state["_y_comp_override"] = comp_y
     pool_y = df[df["League"].isin(comp_y)] if comp_y else df[df["League"]==t_league_y]
 
     # Custom title option (default off)
