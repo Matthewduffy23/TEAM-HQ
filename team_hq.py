@@ -109,6 +109,17 @@ for c in NUMERIC_COLS:
     if c in df_raw.columns:
         df_raw[c] = pd.to_numeric(df_raw[c], errors="coerce")
 
+# ── Derive Goals Against p90 from Goals Against / Matches if the p90 col is
+#    missing or all-zero (common Wyscout export issue) ──────────────────────
+if ("Goals Against" in df_raw.columns and "Matches" in df_raw.columns):
+    _ga_col = pd.to_numeric(df_raw.get("Goals Against p90"), errors="coerce")
+    _all_zero_or_missing = _ga_col.isna().all() or (_ga_col.fillna(0) == 0).all()
+    if _all_zero_or_missing:
+        _matches = pd.to_numeric(df_raw["Matches"], errors="coerce").replace(0, np.nan)
+        df_raw["Goals Against p90"] = (
+            pd.to_numeric(df_raw["Goals Against"], errors="coerce") / _matches
+        ).round(2)
+
 # ─────────────────────────────────────────────
 # METRIC DISPLAY LABELS
 # ─────────────────────────────────────────────
@@ -762,6 +773,13 @@ else:
     ax.spines['polar'].set_visible(False)
     ax.grid(False)
 
+    # Title lines like the Python example (top-left)
+    comp_label = ", ".join(comp_leagues) if comp_leagues else team_league
+    fig.text(0.05, 0.96, f"{sel_team} Style & Performance", fontsize=14,
+             weight='bold', ha='left', color='#111111')
+    fig.text(0.05, 0.935, f"Percentile Scores vs {comp_label}", fontsize=9,
+             ha='left', color='gray')
+
     # Badge in top-right corner
     badge_img = get_team_badge(sel_team)
     if badge_img is not None:
@@ -821,6 +839,7 @@ else:
     st.markdown(chips_html(list(dict.fromkeys(weaknesses)), "#fecaca"), unsafe_allow_html=True)
 
     # ── Scores table with diverging 0-100 colour ──
+    st.markdown("**Scores:**")
     score_data = {
         "Score": ["OVR","ATT","DEF","POS"],
         "Value": [team_row.get("OVR",np.nan), team_row.get("ATT",np.nan),
@@ -850,9 +869,13 @@ else:
         text = "#000" if v > 45 else "#fff"
         return f"background:rgb({r},{g},{b});color:{text}"
 
+    try:
+        styled_sdf = sdf.style.map(sc_color_div, subset=["Value"])
+    except AttributeError:
+        styled_sdf = sdf.style.applymap(sc_color_div, subset=["Value"])
+
     st.dataframe(
-        sdf.style.map(lambda x: sc_color_div(x), subset=["Value"])
-           .format({"Value": lambda x: f"{int(round(x))}" if pd.notna(x) else "—"}),
+        styled_sdf.format({"Value": lambda x: f"{int(round(x))}" if pd.notna(x) else "—"}),
         use_container_width=True
     )
 
@@ -927,6 +950,10 @@ else:
     TITLE_C="#f3f5f7"; LABEL_C="#e8eef8"; DIVIDER="#ffffff"
     TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
 
+    # Editable footer
+    footer_text_f = st.text_input("Footer text (optional)", f"{sel_team_f} — {t_league_f}",
+                                   key="ts_f_footer")
+
     def blend(c1,c2,t):
         c=c1+(c2-c1)*np.clip(t,0,1)
         return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
@@ -946,11 +973,7 @@ else:
     BAR_FRAC=0.85; gutter=0.225; ticks=np.arange(0,101,10)
     LEFT=left_m+0.015
 
-    # No title — just team name as subtitle-level text
-    fig_f.text(LEFT, 0.965, f"{sel_team_f} — {t_league_f}", ha="left", va="top",
-               fontsize=14, fontweight="700", color=TITLE_C)
-
-    y_top=1-top_m-0.06
+    y_top=1-top_m
     for idx,(title,data) in enumerate(sections_f):
         is_last=(idx==len(sections_f)-1)
         n=len(data)
@@ -986,7 +1009,7 @@ else:
             fig_f.lines.append(plt.Line2D([LEFT,1-right_m],[y0,y0],transform=fig_f.transFigure,color=DIVIDER,lw=1.2,alpha=0.95))
         y_top=y_top-header_h-n*row_slot-gap
 
-    fig_f.text((LEFT+gutter+(1-right_m))/2, bot_m*0.3, "Percentile Rank",
+    fig_f.text((LEFT+gutter+(1-right_m))/2, bot_m*0.3, footer_text_f if footer_text_f.strip() else "Percentile Rank",
                ha="center",va="center",fontsize=11,fontweight="bold",color=LABEL_C)
     st.pyplot(fig_f, use_container_width=True)
     buf_f=io.BytesIO(); fig_f.savefig(buf_f,format="png",dpi=130,bbox_inches="tight",facecolor=PAGE_BG)
@@ -1049,57 +1072,54 @@ else:
     angles_y = np.linspace(0, 2*np.pi, N_y, endpoint=False)[::-1]
     rot_shift_y = np.deg2rad(75) - angles_y[0]
     rot_angles_y = [(a+rot_shift_y)%(2*np.pi) for a in angles_y]
-    bar_w_y = 2 * np.pi / N_y
+    bar_w_y = (2*np.pi/N_y)*0.85
 
     fig_y = plt.figure(figsize=(8, 6.5))
-    fig_y.patch.set_facecolor('#e6e6e6')
-    ax_y = fig_y.add_axes([0.05, 0.05, 0.9, 0.70], polar=True)
-    ax_y.set_facecolor('#e6e6e6')
+    fig_y.patch.set_facecolor("#0a0f1c")
+    ax_y = fig_y.add_axes([0.05, 0.05, 0.9, 0.85], polar=True)
+    ax_y.set_facecolor("#0a0f1c")
     ax_y.set_rlim(0, 100)
 
+    # Background track bars
     for i in range(N_y):
-        ax_y.bar(rot_angles_y[i], pcts_y[i],
-                 width=bar_w_y, color=bar_colors_y[i],
-                 edgecolor='black', linewidth=1, zorder=2)
-        if pcts_y[i] > 10:
-            lp = pcts_y[i] - 8
-            ax_y.text(rot_angles_y[i], lp, f"{int(round(pcts_y[i]))}",
-                      ha='center', va='center', fontsize=9, weight='bold', color='white', zorder=3)
+        ax_y.bar(rot_angles_y[i], 100, width=bar_w_y, color="#444", edgecolor="none", zorder=0)
 
-    # Outer ring
-    outer_circle_y = plt.Circle((0, 0), 100, transform=ax_y.transData._b,
-                                 color='black', fill=False, linewidth=2.4)
-    ax_y.add_artist(outer_circle_y)
+    for i, p in enumerate(pcts_y):
+        c = bar_colors_y[i]
+        ax_y.bar(rot_angles_y[i], p, width=bar_w_y, color=c, edgecolor="white", linewidth=1.5, zorder=2)
+        if p >= 20:
+            lp = p - 10 if p >= 30 else p * 0.7
+            ax_y.text(rot_angles_y[i], lp, f"{int(round(p))}",
+                      ha='center', va='center', fontsize=11, weight='bold', color='white', zorder=3)
 
     # Dividers
     for i in range(N_y):
         sep = (rot_angles_y[i] - bar_w_y / 2) % (2*np.pi)
         is_cross = any(np.isclose(sep, a, atol=0.01) for a in [0, np.pi/2, np.pi, 3*np.pi/2])
         ax_y.plot([sep, sep], [0, 100],
-                  color='black' if is_cross else '#b0b0b0',
+                  color='white' if is_cross else 'rgba(255,255,255,0.3)',
                   linewidth=1.8 if is_cross else 1, zorder=4)
+
+    # Reference rings
+    for rp in [90, 75, 50, 25]:
+        theta_ref = np.linspace(0, 2*np.pi, 500)
+        ax_y.plot(theta_ref, [rp]*500, linestyle="dotted", lw=1.2, color="lightgrey", zorder=1)
 
     # Labels
     for i, lab in enumerate(labels_y):
-        ax_y.text(rot_angles_y[i], 125, lab.upper(),
-                  ha='center', va='center', fontsize=8, weight='bold', color='black', zorder=5)
+        ax_y.text(rot_angles_y[i], 145, lab.upper(),
+                  ha='center', va='center', fontsize=9, weight='bold', color='white', zorder=5)
 
     ax_y.set_xticks([]); ax_y.set_yticks([])
     ax_y.spines['polar'].set_visible(False); ax_y.grid(False)
 
     # Custom title (only if enabled and not empty)
     if use_custom_title_y and custom_title_y.strip():
-        fig_y.text(0.05, 0.95, custom_title_y.strip(), ha='left', fontsize=13, weight='bold', color='#111')
-
-    # Badge top-right
-    badge_img_y = get_team_badge(sel_team_y)
-    if badge_img_y is not None:
-        crest_ax_y = fig_y.add_axes([0.83, 0.82, 0.14, 0.14])
-        crest_ax_y.imshow(badge_img_y)
-        crest_ax_y.axis('off')
+        fig_y.text(0.5, 0.97, custom_title_y.strip(), ha='center', fontsize=13,
+                   weight='bold', color='white')
 
     st.pyplot(fig_y, use_container_width=True)
-    buf_y=io.BytesIO(); fig_y.savefig(buf_y,format="png",dpi=300,bbox_inches="tight",facecolor='#e6e6e6')
+    buf_y=io.BytesIO(); fig_y.savefig(buf_y,format="png",dpi=300,bbox_inches="tight",facecolor="#0a0f1c")
     st.download_button("⬇️ Download Feature Y", buf_y.getvalue(),
                        f"{sel_team_y.replace(' ','_')}_featureY.png","image/png")
     plt.close(fig_y)
