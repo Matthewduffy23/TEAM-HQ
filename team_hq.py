@@ -61,11 +61,14 @@ COL_MAP = {
     "Goals For":         ["goals for", "goals scored", "goals_for"],
     "Goals Against":     ["goals against", "goals conceded", "goals_against"],
     "Goal Difference":   ["goal difference", "goal diff", "goal_difference"],
+    "Avg Age":           ["avg age", "average age", "avg_age"],
     "Possession %":      ["possession %", "possession", "possession_pct"],
     "Goals p90":         ["goals p90", "goals per 90", "goals_p90"],
     "xG p90":            ["xg p90", "xg per 90", "xg_p90"],
     "Shots p90":         ["shots p90", "shots per 90", "shots_p90"],
+    "Shot Accuracy %":   ["shot accuracy %", "shooting accuracy %", "shot_accuracy_pct"],
     "Crosses p90":       ["crosses p90", "crosses per 90", "crosses_p90"],
+    "Cross Accuracy %":  ["cross accuracy %", "crossing accuracy %", "cross_accuracy_pct"],
     "Dribbles p90":      ["dribbles p90", "dribbles per 90", "dribbles_p90"],
     "Touches in Box p90":["touches in box p90", "touches in box per 90", "touches_in_box_p90"],
     "Shots Against p90": ["shots against p90", "shots vs p90", "shots_against_p90"],
@@ -107,35 +110,39 @@ for c in NUMERIC_COLS:
         df_raw[c] = pd.to_numeric(df_raw[c], errors="coerce")
 
 # ─────────────────────────────────────────────
-# METRIC DISPLAY LABELS (no p90 suffix)
+# METRIC DISPLAY LABELS
 # ─────────────────────────────────────────────
 METRIC_LABELS = {
     "Crosses p90":              "Crosses",
+    "Cross Accuracy %":         "Crossing Accuracy %",
     "Goals p90":                "Goals Scored",
     "xG p90":                   "xG",
     "Shots p90":                "Shots",
-    "Touches in Box p90":       "Touches in Penalty Area",
+    "Shot Accuracy %":          "Shooting %",
+    "Touches in Box p90":       "Touches in Box",
     "Aerial Duels Won %":       "Aerial Duel Success %",
-    "Goals Against p90":        "Goals Conceded",
+    "Goals Against p90":        "Goals Against",
     "xG Against p90":           "xG Against",
     "Defensive Duels p90":      "Defensive Duels",
     "Defensive Duels Won %":    "Defensive Duel Win %",
     "Shots Against p90":        "Shots Against",
     "PPDA":                     "PPDA",
+    "Aerial Duels p90":         "Aerial Duels",
     "Dribbles p90":             "Dribbles",
     "Passes p90":               "Passes",
     "Pass Accuracy %":          "Passing Accuracy %",
     "Long Passes p90":          "Long Passes",
     "Long Pass Accuracy %":     "Long Passing %",
-    "Possession %":             "Possession %",
+    "Possession %":             "Possession",
     "Passes to Final Third p90":"Passes to Final 3rd",
     "Progressive Passes p90":   "Progressive Passes",
     "Progressive Runs p90":     "Progressive Runs",
     "Expected Points":          "xPoints",
     "Points":                   "Points",
     "Goals For":                "Goals For",
-    "Goals Against":            "Goals Against",
+    "Goals Against":            "Goals Against (Total)",
     "Matches":                  "Matches",
+    "Avg Age":                  "Avg Age",
 }
 
 def mlabel(col):
@@ -325,7 +332,6 @@ if metric_filter_col != "None" and metric_filter_col in df.columns:
     if filter_mode == "Raw value":
         df = df[pd.to_numeric(df[metric_filter_col], errors="coerce") >= metric_min_val]
     else:
-        # percentile filter vs own league
         _pct_col = f"_pct_{metric_filter_col}"
         if _pct_col in df.columns:
             df = df[df[_pct_col] >= metric_min_pct]
@@ -466,19 +472,43 @@ def metric_val(row, col):
     return f"{float(v):.2f}".rstrip("0").rstrip(".")
 
 # ─────────────────────────────────────────────
-# METRIC SECTIONS (ordered per spec)
+# LEAGUE POSITION HELPERS
+# ─────────────────────────────────────────────
+def get_league_pos(row, df_all, metric, ascending=False):
+    """Return rank of team within its own league for given metric."""
+    lg = row.get("League","")
+    if not lg or metric not in df_all.columns:
+        return None, None
+    lg_df = df_all[df_all["League"] == lg].copy()
+    lg_df = lg_df.dropna(subset=[metric])
+    n = len(lg_df)
+    if n == 0:
+        return None, None
+    sorted_df = lg_df.sort_values(metric, ascending=ascending).reset_index(drop=True)
+    team = row.get("Team","")
+    matches = sorted_df[sorted_df["Team"] == team]
+    if matches.empty:
+        return None, n
+    pos = matches.index[0] + 1
+    return pos, n
+
+# ─────────────────────────────────────────────
+# METRIC SECTIONS (new order per spec)
 # ─────────────────────────────────────────────
 TEAM_METRICS_ATT = [
     ("Crosses",                "Crosses p90"),
+    ("Crossing Accuracy %",    "Cross Accuracy %"),
     ("Goals Scored",           "Goals p90"),
     ("xG",                     "xG p90"),
     ("Shots",                  "Shots p90"),
-    ("Touches in Penalty Area","Touches in Box p90"),
+    ("Shooting %",             "Shot Accuracy %"),
+    ("Touches in Box",         "Touches in Box p90"),
 ]
 TEAM_METRICS_DEF = [
-    ("Aerial Duel Success %",  "Aerial Duels Won %"),
-    ("Goals Conceded",         "Goals Against p90"),
+    ("Goals Against",          "Goals Against p90"),
     ("xG Against",             "xG Against p90"),
+    ("Aerial Duels",           "Aerial Duels p90"),
+    ("Aerial Duel Success %",  "Aerial Duels Won %"),
     ("Defensive Duels",        "Defensive Duels p90"),
     ("Defensive Duel Win %",   "Defensive Duels Won %"),
     ("Shots Against",          "Shots Against p90"),
@@ -486,11 +516,11 @@ TEAM_METRICS_DEF = [
 ]
 TEAM_METRICS_POS = [
     ("Dribbles",              "Dribbles p90"),
+    ("Possession",            "Possession %"),
     ("Passes",                "Passes p90"),
     ("Passing Accuracy %",    "Pass Accuracy %"),
     ("Long Passes",           "Long Passes p90"),
     ("Long Passing %",        "Long Pass Accuracy %"),
-    ("Possession %",          "Possession %"),
     ("Passes to Final 3rd",   "Passes to Final Third p90"),
     ("Progressive Passes",    "Progressive Passes p90"),
     ("Progressive Runs",      "Progressive Runs p90"),
@@ -515,7 +545,6 @@ st.dataframe(
     df_sorted[show_cols].style.format(
         {c: "{:.1f}" for c in ["OVR","ATT","DEF","POS","xG p90","Expected Points"]}
     ),
-    width="stretch" if hasattr(st, "_legacy") else None,
     use_container_width=True
 )
 
@@ -528,7 +557,7 @@ st.subheader("🃏 Pro Layout — Team Cards")
 
 st.markdown("""
 <style>
-.team-card{position:relative;width:min(420px,96%);display:grid;grid-template-columns:96px 1fr 48px;
+.team-card{position:relative;width:min(440px,96%);display:grid;grid-template-columns:96px 1fr 48px;
     gap:12px;align-items:start;background:#141823;border:1px solid rgba(255,255,255,.06);
     border-radius:20px;padding:16px;margin-bottom:12px;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 6px 24px rgba(0,0,0,.35);}
@@ -542,7 +571,10 @@ st.markdown("""
 .tc-pill-row{display:flex;gap:8px;align-items:center;margin:3px 0;}
 .tc-rank{position:absolute;top:10px;right:14px;color:#b7bfe1;font-weight:800;font-size:18px;}
 .tc-wrap{display:flex;justify-content:center;}
-.tc-age{font-size:11px;color:#8899c0;margin-top:4px;text-align:center;}
+.tc-badge-col{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.tc-meta{font-size:11px;color:#8899c0;text-align:center;line-height:1.5;}
+.tc-meta-label{color:#6b7a9f;font-size:10px;}
+.tc-meta-val{color:#c8d4f0;font-weight:700;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -568,6 +600,13 @@ for i, (_, row) in enumerate(df_pro.iterrows()):
     defv= fmt2(row.get("DEF",0))
     pos = fmt2(row.get("POS",0))
 
+    # Points & xPoints league positions
+    pts_pos, pts_n = get_league_pos(row, df, "Points", ascending=False)
+    xpts_pos, xpts_n = get_league_pos(row, df, "Expected Points", ascending=False)
+
+    pts_str = f"{pts_pos}/{pts_n}" if pts_pos is not None else "—"
+    xpts_str = f"{xpts_pos}/{xpts_n}" if xpts_pos is not None else "—"
+
     avg_age_str = ""
     if "Avg Age" in row and pd.notna(row.get("Avg Age")):
         avg_age_str = f"Avg Age: {float(row['Avg Age']):.1f}"
@@ -583,11 +622,19 @@ for i, (_, row) in enumerate(df_pro.iterrows()):
         for label, sc in [("Overall","OVR"),("Attack","ATT"),("Defense","DEF"),("Possession","POS")]
     ])
 
+    meta_rows = f"""
+<div class='tc-meta'>
+  <span class='tc-meta-label'>Pos</span> <span class='tc-meta-val'>{pts_str}</span><br>
+  <span class='tc-meta-label'>xPos</span> <span class='tc-meta-val'>{xpts_str}</span>
+</div>"""
+    if avg_age_str:
+        meta_rows += f"<div class='tc-meta' style='margin-top:2px;'>{avg_age_str}</div>"
+
     st.markdown(f"""
     <div class='tc-wrap'><div class='team-card'>
-      <div>
+      <div class='tc-badge-col'>
         <div class='team-badge'>{badge_html}</div>
-        <div class='tc-age'>{avg_age_str}</div>
+        {meta_rows}
       </div>
       <div>
         <div class='tc-name'>{team}</div>
@@ -663,53 +710,75 @@ else:
     pcts = [team_pct(team_row, pool, m, m in INVERT_METRICS) for m in radar_metrics]
     labels_clean = [mlabel(m) for m in radar_metrics]
 
+    # ── Radar styled like attached Python example ──
     color_scale = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
     cmap = LinearSegmentedColormap.from_list("cs", color_scale)
+    bar_colors = [cmap(p/100) for p in pcts]
 
     N = len(radar_metrics)
     angles = np.linspace(0, 2*np.pi, N, endpoint=False)[::-1]
-    rot_shift = np.deg2rad(75) - angles[0]
-    rot_angles = [(a + rot_shift) % (2*np.pi) for a in angles]
-    bar_width = (2*np.pi / N) * 0.85
+    rotation_shift = np.deg2rad(75) - angles[0]
+    rotated_angles = [(a + rotation_shift) % (2*np.pi) for a in angles]
+    bar_width = 2 * np.pi / N
 
-    fig = plt.figure(figsize=(9, 7.5))
-    fig.patch.set_facecolor("#0a0f1c")
-    ax = fig.add_axes([0.05, 0.05, 0.9, 0.85], polar=True)
-    ax.set_facecolor("#0a0f1c")
-    ax.set_rlim(0,100)
+    fig = plt.figure(figsize=(8, 6.5))
+    fig.patch.set_facecolor('#e6e6e6')
+    ax = fig.add_axes([0.05, 0.05, 0.9, 0.70], polar=True)
+    ax.set_facecolor('#e6e6e6')
+    ax.set_rlim(0, 100)
 
+    # Draw bars
     for i in range(N):
-        ax.bar(rot_angles[i], 100, width=bar_width, color="#444", edgecolor="none", zorder=0)
+        ax.bar(rotated_angles[i], pcts[i],
+               width=bar_width, color=bar_colors[i],
+               edgecolor='black', linewidth=1, zorder=2)
+        if pcts[i] > 10:
+            label_pos = pcts[i] - 8
+            ax.text(rotated_angles[i], label_pos, f"{int(round(pcts[i]))}",
+                    ha='center', va='center', fontsize=9, weight='bold', color='white', zorder=3)
 
-    for i, (p, c) in enumerate(zip(pcts, [cmap(p/100) for p in pcts])):
-        ax.bar(rot_angles[i], p, width=bar_width, color=c, edgecolor="white", linewidth=1.5, zorder=2)
-        if p >= 20:
-            lp = p-10 if p>=30 else p*0.7
-            ax.text(rot_angles[i], lp, f"{int(round(p))}", ha="center", va="center",
-                    fontsize=10, weight="bold", color="white", zorder=3)
+    # Outer ring
+    outer_circle = plt.Circle((0, 0), 100, transform=ax.transData._b,
+                               color='black', fill=False, linewidth=2.4)
+    ax.add_artist(outer_circle)
 
+    # Dividers
     for i in range(N):
-        sep = (rot_angles[i] - bar_width/2) % (2*np.pi)
-        if any(np.isclose(sep, a, atol=0.01) for a in [0,np.pi/2,np.pi,3*np.pi/2]):
-            ax.plot([sep,sep],[0,100], color="white", lw=1.8, zorder=4)
+        sep_angle = (rotated_angles[i] - bar_width / 2) % (2*np.pi)
+        is_cross = any(np.isclose(sep_angle, a, atol=0.01)
+                       for a in [0, np.pi/2, np.pi, 3*np.pi/2])
+        ax.plot([sep_angle, sep_angle], [0, 100],
+                color='black' if is_cross else '#b0b0b0',
+                linewidth=1.8 if is_cross else 1, zorder=4)
 
-    for i, lab in enumerate(labels_clean):
-        ax.text(rot_angles[i], 130, lab.upper(), ha="center", va="center",
-                fontsize=9, weight="bold", color="white", zorder=5)
+    # Metric labels
+    label_radius = 125
+    for i, label in enumerate(labels_clean):
+        ax.text(rotated_angles[i], label_radius, label.upper(),
+                ha='center', va='center', fontsize=8, weight='bold', color='black', zorder=5)
 
-    for rr in [90, 75, 50, 25]:
-        theta_c = np.linspace(0, 2*np.pi, 500)
-        ax.plot(theta_c, [rr]*500, linestyle="dotted", lw=1.2, color="lightgrey", zorder=1)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines['polar'].set_visible(False)
+    ax.grid(False)
 
-    ax.set_xticks([]); ax.set_yticks([])
-    ax.spines["polar"].set_visible(False); ax.grid(False)
-
-    fig.text(0.5, 0.96, f"{sel_team}", ha="center", fontsize=16, weight="bold", color="white")
-    fig.text(0.5, 0.93, f"{team_league} | vs {', '.join(comp_leagues)}", ha="center", fontsize=10, color="#a8b3cf")
+    # Badge in top-right corner
+    badge_img = get_team_badge(sel_team)
+    if badge_img is not None:
+        crest_ax = fig.add_axes([0.83, 0.82, 0.14, 0.14])
+        crest_ax.imshow(badge_img)
+        crest_ax.axis('off')
 
     st.pyplot(fig, use_container_width=True)
+
+    # Download button
+    buf_profile = io.BytesIO()
+    fig.savefig(buf_profile, format="png", dpi=200, bbox_inches='tight', facecolor='#e6e6e6')
+    st.download_button("⬇️ Download Radar", buf_profile.getvalue(),
+                       f"{sel_team.replace(' ','_')}_radar.png", "image/png")
     plt.close(fig)
 
+    # ── Style / Strengths / Weaknesses ──
     STYLE_TEAM = {
         "Possession %":    {"style":"Possession-based","sw":"Possession"},
         "Passes p90":      {"style":"High passing volume","sw":"Passing Volume"},
@@ -751,21 +820,38 @@ else:
     st.markdown("**Weaknesses:**")
     st.markdown(chips_html(list(dict.fromkeys(weaknesses)), "#fecaca"), unsafe_allow_html=True)
 
+    # ── Scores table with diverging 0-100 colour ──
     score_data = {
         "Score": ["OVR","ATT","DEF","POS"],
         "Value": [team_row.get("OVR",np.nan), team_row.get("ATT",np.nan),
                   team_row.get("DEF",np.nan), team_row.get("POS",np.nan)]
     }
     sdf = pd.DataFrame(score_data).set_index("Score")
-    def sc_color(v):
-        if pd.isna(v): return "background:#fff"
-        v=float(v)
-        if v<=50: c1,c2,t=(190,42,62),(244,209,102),v/50
-        else: c1,c2,t=(244,209,102),(34,197,94),(v-50)/50
-        r=int(c1[0]+(c2[0]-c1[0])*t); g=int(c1[1]+(c2[1]-c1[1])*t); b=int(c1[2]+(c2[2]-c1[2])*t)
-        return f"background:rgb({r},{g},{b})"
+
+    # Diverging red→orange→gold→green 0-100
+    SCORE_RED   = np.array([190, 42,  62])
+    SCORE_ORG   = np.array([230, 120, 50])
+    SCORE_GOLD  = np.array([244, 197, 102])
+    SCORE_GREEN = np.array([34,  197, 94])
+
+    def sc_color_div(v):
+        if pd.isna(v): return "background:#1a1a2e;color:#fff"
+        v = float(np.clip(v, 0, 100))
+        if v <= 33:
+            t = v / 33
+            c = SCORE_RED + (SCORE_ORG - SCORE_RED) * t
+        elif v <= 66:
+            t = (v - 33) / 33
+            c = SCORE_ORG + (SCORE_GOLD - SCORE_ORG) * t
+        else:
+            t = (v - 66) / 34
+            c = SCORE_GOLD + (SCORE_GREEN - SCORE_GOLD) * t
+        r, g, b = int(np.clip(c[0],0,255)), int(np.clip(c[1],0,255)), int(np.clip(c[2],0,255))
+        text = "#000" if v > 45 else "#fff"
+        return f"background:rgb({r},{g},{b});color:{text}"
+
     st.dataframe(
-        sdf.style.map(lambda x: sc_color(x), subset=["Value"])
+        sdf.style.map(lambda x: sc_color_div(x), subset=["Value"])
            .format({"Value": lambda x: f"{int(round(x))}" if pd.notna(x) else "—"}),
         use_container_width=True
     )
@@ -799,29 +885,33 @@ else:
         if pd.isna(v): return "—"
         return f"{float(v):.2f}".rstrip("0").rstrip(".")
 
+    # New order per spec
     ATTACKING_F = [
         ("Crosses",                "Crosses p90",         False),
+        ("Crossing Accuracy %",    "Cross Accuracy %",    False),
         ("Goals Scored",           "Goals p90",           False),
         ("xG",                     "xG p90",              False),
         ("Shots",                  "Shots p90",           False),
-        ("Touches in Penalty Area","Touches in Box p90",  False),
+        ("Shooting %",             "Shot Accuracy %",     False),
+        ("Touches in Box",         "Touches in Box p90",  False),
     ]
     DEFENSIVE_F = [
-        ("Aerial Duel Success %",  "Aerial Duels Won %",      False),
-        ("Goals Conceded",         "Goals Against p90",        True),
+        ("Goals Against",          "Goals Against p90",        True),
         ("xG Against",             "xG Against p90",           True),
-        ("Defensive Duels",        "Defensive Duels p90",     False),
-        ("Defensive Duel Win %",   "Defensive Duels Won %",   False),
+        ("Aerial Duels",           "Aerial Duels p90",         False),
+        ("Aerial Duel Success %",  "Aerial Duels Won %",       False),
+        ("Defensive Duels",        "Defensive Duels p90",      False),
+        ("Defensive Duel Win %",   "Defensive Duels Won %",    False),
         ("Shots Against",          "Shots Against p90",        True),
         ("PPDA",                   "PPDA",                     True),
     ]
     POSSESSION_F = [
         ("Dribbles",              "Dribbles p90",              False),
+        ("Possession",            "Possession %",              False),
         ("Passes",                "Passes p90",                False),
         ("Passing Accuracy %",    "Pass Accuracy %",           False),
         ("Long Passes",           "Long Passes p90",           False),
         ("Long Passing %",        "Long Pass Accuracy %",      False),
-        ("Possession %",          "Possession %",              False),
         ("Passes to Final 3rd",   "Passes to Final Third p90", False),
         ("Progressive Passes",    "Progressive Passes p90",    False),
         ("Progressive Runs",      "Progressive Runs p90",      False),
@@ -856,8 +946,9 @@ else:
     BAR_FRAC=0.85; gutter=0.225; ticks=np.arange(0,101,10)
     LEFT=left_m+0.015
 
+    # No title — just team name as subtitle-level text
     fig_f.text(LEFT, 0.965, f"{sel_team_f} — {t_league_f}", ha="left", va="top",
-               fontsize=18, fontweight="900", color=TITLE_C)
+               fontsize=14, fontweight="700", color=TITLE_C)
 
     y_top=1-top_m-0.06
     for idx,(title,data) in enumerate(sections_f):
@@ -924,6 +1015,12 @@ else:
     )
     pool_y = df[df["League"].isin(comp_y)] if comp_y else df[df["League"]==t_league_y]
 
+    # Custom title option (default off)
+    use_custom_title_y = st.checkbox("Add custom title", value=False, key="ts_y_custom_title_toggle")
+    custom_title_y = ""
+    if use_custom_title_y:
+        custom_title_y = st.text_input("Custom title text", "", key="ts_y_custom_title")
+
     METRICS_Y = [
         "xG p90","Goals p90","Touches in Box p90",
         "xG Against p90","Goals Against p90","PPDA",
@@ -947,49 +1044,62 @@ else:
     N_y = len(metrics_y)
     color_scale_y = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
     cmap_y = LinearSegmentedColormap.from_list("csy", color_scale_y)
+    bar_colors_y = [cmap_y(p/100) for p in pcts_y]
 
     angles_y = np.linspace(0, 2*np.pi, N_y, endpoint=False)[::-1]
     rot_shift_y = np.deg2rad(75) - angles_y[0]
     rot_angles_y = [(a+rot_shift_y)%(2*np.pi) for a in angles_y]
-    bar_w_y = (2*np.pi/N_y)*0.85
+    bar_w_y = 2 * np.pi / N_y
 
-    fig_y = plt.figure(figsize=(8,6.5))
-    fig_y.patch.set_facecolor("#0a0f1c")
-    ax_y = fig_y.add_axes([0.05,0.05,0.9,0.9], polar=True)
-    ax_y.set_facecolor("#0a0f1c")
-    ax_y.set_rlim(0,100)
-
-    for i in range(N_y):
-        ax_y.bar(rot_angles_y[i], 100, width=bar_w_y, color="#444", edgecolor="none", zorder=0)
-
-    for i, p in enumerate(pcts_y):
-        c = cmap_y(p/100)
-        ax_y.bar(rot_angles_y[i], p, width=bar_w_y, color=c, edgecolor="white", linewidth=1.5, zorder=2)
-        if p>=20:
-            lp=p-10 if p>=30 else p*0.7
-            ax_y.text(rot_angles_y[i], lp, f"{int(round(p))}", ha="center", va="center",
-                      fontsize=11, weight="bold", color="white", zorder=3)
+    fig_y = plt.figure(figsize=(8, 6.5))
+    fig_y.patch.set_facecolor('#e6e6e6')
+    ax_y = fig_y.add_axes([0.05, 0.05, 0.9, 0.70], polar=True)
+    ax_y.set_facecolor('#e6e6e6')
+    ax_y.set_rlim(0, 100)
 
     for i in range(N_y):
-        sep=(rot_angles_y[i]-bar_w_y/2)%(2*np.pi)
-        if any(np.isclose(sep,a,atol=0.01) for a in [0,np.pi/2,np.pi,3*np.pi/2]):
-            ax_y.plot([sep,sep],[0,100],color="white",lw=1.8,zorder=4)
+        ax_y.bar(rot_angles_y[i], pcts_y[i],
+                 width=bar_w_y, color=bar_colors_y[i],
+                 edgecolor='black', linewidth=1, zorder=2)
+        if pcts_y[i] > 10:
+            lp = pcts_y[i] - 8
+            ax_y.text(rot_angles_y[i], lp, f"{int(round(pcts_y[i]))}",
+                      ha='center', va='center', fontsize=9, weight='bold', color='white', zorder=3)
 
-    for i,lab in enumerate(labels_y):
-        ax_y.text(rot_angles_y[i], 145, lab.upper(), ha="center", va="center",
-                  fontsize=9, weight="bold", color="white", zorder=5)
+    # Outer ring
+    outer_circle_y = plt.Circle((0, 0), 100, transform=ax_y.transData._b,
+                                 color='black', fill=False, linewidth=2.4)
+    ax_y.add_artist(outer_circle_y)
 
-    for rp in [90,75,50,25]:
-        theta_c=np.linspace(0,2*np.pi,500)
-        ax_y.plot(theta_c,[rp]*500,linestyle="dotted",lw=1.2,color="lightgrey",zorder=1)
+    # Dividers
+    for i in range(N_y):
+        sep = (rot_angles_y[i] - bar_w_y / 2) % (2*np.pi)
+        is_cross = any(np.isclose(sep, a, atol=0.01) for a in [0, np.pi/2, np.pi, 3*np.pi/2])
+        ax_y.plot([sep, sep], [0, 100],
+                  color='black' if is_cross else '#b0b0b0',
+                  linewidth=1.8 if is_cross else 1, zorder=4)
+
+    # Labels
+    for i, lab in enumerate(labels_y):
+        ax_y.text(rot_angles_y[i], 125, lab.upper(),
+                  ha='center', va='center', fontsize=8, weight='bold', color='black', zorder=5)
 
     ax_y.set_xticks([]); ax_y.set_yticks([])
-    ax_y.spines["polar"].set_visible(False); ax_y.grid(False)
+    ax_y.spines['polar'].set_visible(False); ax_y.grid(False)
 
-    fig_y.text(0.5, 0.97, f"{sel_team_y}", ha="center", fontsize=14, weight="bold", color="white")
+    # Custom title (only if enabled and not empty)
+    if use_custom_title_y and custom_title_y.strip():
+        fig_y.text(0.05, 0.95, custom_title_y.strip(), ha='left', fontsize=13, weight='bold', color='#111')
+
+    # Badge top-right
+    badge_img_y = get_team_badge(sel_team_y)
+    if badge_img_y is not None:
+        crest_ax_y = fig_y.add_axes([0.83, 0.82, 0.14, 0.14])
+        crest_ax_y.imshow(badge_img_y)
+        crest_ax_y.axis('off')
 
     st.pyplot(fig_y, use_container_width=True)
-    buf_y=io.BytesIO(); fig_y.savefig(buf_y,format="png",dpi=300,bbox_inches="tight",facecolor="#0a0f1c")
+    buf_y=io.BytesIO(); fig_y.savefig(buf_y,format="png",dpi=300,bbox_inches="tight",facecolor='#e6e6e6')
     st.download_button("⬇️ Download Feature Y", buf_y.getvalue(),
                        f"{sel_team_y.replace(' ','_')}_featureY.png","image/png")
     plt.close(fig_y)
@@ -1027,7 +1137,6 @@ else:
     if vmin==vmax: vmax=vmin+1e-6
     ts_lb_arr = (vals_lb-vmin)/(vmax-vmin)
 
-    # Invert normalisation so highest bar = green
     if lb_metric in INVERT_METRICS:
         ts_lb_arr = 1.0 - ts_lb_arr
 
