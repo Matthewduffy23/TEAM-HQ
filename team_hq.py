@@ -383,22 +383,7 @@ if display_league_filter != "All leagues":
     df_sorted = df_sorted[df_sorted["League"] == display_league_filter]
 
 team_options = sorted(df["Team"].dropna().unique().tolist())
-
-# ─────────────────────────────────────────────
-# MASTER TEAM SELECTOR — single source of truth
-# ─────────────────────────────────────────────
 team_league_map = df.set_index("Team")["League"].to_dict() if "League" in df.columns else {}
-
-st.markdown("### 🔍 Team Selection")
-st.caption("Selecting a team here drives Team Profile, Feature F, and Feature Y.")
-
-master_team = st.selectbox("Select team", team_options, key="ts_master_team")
-master_league = team_league_map.get(master_team, "")
-
-# Seed title/subtitle on very first load
-if "ts_profile_title" not in st.session_state:
-    st.session_state["ts_profile_title"]    = f"{master_team} Style & Performance"
-    st.session_state["ts_profile_subtitle"] = f"Percentile Scores vs {master_league}"
 
 # ─────────────────────────────────────────────
 # BADGE / FLAG HELPERS
@@ -702,53 +687,40 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🎯 Team Profile")
 
-sel_team = master_team
+sel_team = st.selectbox("Select team", team_options, key="ts_profile_team")
+team_league = team_league_map.get(sel_team, "")  # always defined for Feature F/Y below
 team_row = df[df["Team"] == sel_team]
 if team_row.empty:
     st.info("Team not found in current filter.")
 else:
     team_row = team_row.iloc[0]
-    team_league = str(team_row["League"]) if "League" in team_row.index else master_league
+    team_league = str(team_row["League"]) if "League" in team_row.index else ""
 
     _avail_leagues = sorted(df["League"].dropna().unique())
-
-    # Detect when team has changed so we can reset the comp pool
-    _prev_team = st.session_state.get("_profile_prev_team", None)
-    _team_changed = (_prev_team != sel_team)
-    if _team_changed:
-        st.session_state["_profile_prev_team"] = sel_team
-        st.session_state["_profile_comp_override"] = [team_league]
-        st.session_state["ts_profile_title"]    = f"{sel_team} Style & Performance"
-        st.session_state["ts_profile_subtitle"] = f"Percentile Scores vs {team_league}"
-
-    _comp_default = st.session_state.get("_profile_comp_override", [team_league])
-    _comp_default = [lg for lg in _comp_default if lg in _avail_leagues] or [team_league]
 
     comp_leagues = st.multiselect(
         "Comparison pool (default = own league)",
         _avail_leagues,
-        default=_comp_default,
-        key="ts_profile_comp_leagues",
+        default=[team_league] if team_league in _avail_leagues else [],
+        key=f"ts_profile_comp_{sel_team}",
     )
-    # Persist user's manual changes
-    st.session_state["_profile_comp_override"] = comp_leagues
-
     pool = df[df["League"].isin(comp_leagues)] if comp_leagues else df[df["League"] == team_league]
 
-    # Editable title & subtitle — always seeded fresh from current team/league
-    _default_title    = f"{sel_team} Style & Performance"
-    _default_subtitle = f"Percentile Scores vs {', '.join(comp_leagues) if comp_leagues else team_league}"
-
+    # Editable title & subtitle — value= reseeds automatically when sel_team changes
+    _pool_label = ", ".join(comp_leagues) if comp_leagues else team_league
     c_title, c_sub = st.columns(2)
     with c_title:
-        profile_title = st.text_input("Chart title", key="ts_profile_title")
+        profile_title = st.text_input(
+            "Chart title",
+            value=f"{sel_team} Style & Performance",
+            key=f"ts_profile_title_{sel_team}",
+        )
     with c_sub:
-        profile_subtitle = st.text_input("Chart subtitle", key="ts_profile_subtitle")
-
-    if not profile_title.strip():
-        profile_title = _default_title
-    if not profile_subtitle.strip():
-        profile_subtitle = _default_subtitle
+        profile_subtitle = st.text_input(
+            "Chart subtitle",
+            value=f"Percentile Scores vs {_pool_label}",
+            key=f"ts_profile_subtitle_{sel_team}",
+        )
 
     RADAR_METRICS_TEAM = [
         "xG p90", "Goals p90", "Touches in Box p90",
@@ -949,13 +921,13 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("📋 Feature F — Team Percentile Board")
 
-sel_team_f = master_team
+sel_team_f = sel_team
 t_row_f = df[df["Team"] == sel_team_f]
 if t_row_f.empty:
     st.info("Team not found.")
 else:
     t_row_f = t_row_f.iloc[0]
-    t_league_f = str(t_row_f.get("League",""))
+    t_league_f = str(t_row_f["League"]) if "League" in t_row_f.index else team_league
     pool_f = df[df["League"] == t_league_f]
 
     def pct_f(col, invert=False):
@@ -1087,28 +1059,21 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🌀 Feature Y — Team Polar Radar")
 
-sel_team_y = master_team
+sel_team_y = sel_team
 t_row_y = df[df["Team"] == sel_team_y]
 if t_row_y.empty:
     st.info("Team not found.")
 else:
     t_row_y = t_row_y.iloc[0]
-    t_league_y = str(t_row_y["League"]) if "League" in t_row_y.index else master_league
+    t_league_y = str(t_row_y["League"]) if "League" in t_row_y.index else team_league
 
-    _prev_team_y = st.session_state.get("_y_prev_team", None)
-    if _prev_team_y != sel_team_y:
-        st.session_state["_y_prev_team"] = sel_team_y
-        st.session_state["_y_comp_override"] = [t_league_y]
-
-    _comp_y_default = st.session_state.get("_y_comp_override", [t_league_y])
     _avail_y = sorted(df["League"].dropna().unique())
-    _comp_y_default = [lg for lg in _comp_y_default if lg in _avail_y] or [t_league_y]
 
     comp_y = st.multiselect(
         "Comparison pool", _avail_y,
-        default=_comp_y_default, key="ts_y_comp"
+        default=[t_league_y] if t_league_y in _avail_y else [],
+        key=f"ts_y_comp_{sel_team_y}"
     )
-    st.session_state["_y_comp_override"] = comp_y
     pool_y = df[df["League"].isin(comp_y)] if comp_y else df[df["League"]==t_league_y]
 
     # Custom title option (default off)
