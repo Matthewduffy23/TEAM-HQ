@@ -1180,6 +1180,14 @@ with st.expander("Leaderboard settings", expanded=False):
     lb_metric   = st.selectbox("Metric", _lb_metric_opts, index=_lb_metric_opts.index(_lb_def),
                                format_func=mlabel, key="ts_lb_metric")
     lb_n        = st.slider("Top N", 5, 40, 20, 5, key="ts_lb_n")
+
+    # League pool — default to selected team's league
+    _lb_all_leagues = sorted(df["League"].dropna().unique().tolist())
+    _lb_league_default = [team_league] if team_league in _lb_all_leagues else _lb_all_leagues[:1]
+    lb_leagues  = st.multiselect("League pool", _lb_all_leagues,
+                                 default=_lb_league_default,
+                                 key=f"ts_lb_leagues_{sel_team}")
+
     lb_theme    = st.radio("Theme", ["Light","Dark"], horizontal=True, key="ts_lb_theme")
 
     _lb_pal_opts = [
@@ -1212,7 +1220,8 @@ if lb_metric not in df.columns:
     st.info("Metric not available.")
 else:
     _lb_asc = lb_metric in INVERT_METRICS
-    _lb_df = df[["Team","League",lb_metric]].dropna(subset=[lb_metric]).copy()
+    _lb_pool = df[df["League"].isin(lb_leagues)] if lb_leagues else df
+    _lb_df = _lb_pool[["Team","League",lb_metric]].dropna(subset=[lb_metric]).copy()
     _lb_df[lb_metric] = pd.to_numeric(_lb_df[lb_metric], errors="coerce")
     _lb_df = _lb_df.dropna().sort_values(lb_metric, ascending=_lb_asc).reset_index(drop=True).head(int(lb_n))
 
@@ -1321,6 +1330,13 @@ with st.expander("Scatter settings", expanded=False):
     sc_colour_metric = st.selectbox("Colour dots by", _sc_num_cols,
                                     index=_sc_num_cols.index(_sc_x_def), format_func=mlabel, key="ts_sc_colour")
 
+    # League pool — default to selected team's league
+    _sc_all_leagues = sorted(df["League"].dropna().unique().tolist())
+    _sc_league_default = [team_league] if team_league in _sc_all_leagues else _sc_all_leagues[:1]
+    sc_leagues = st.multiselect("League pool", _sc_all_leagues,
+                                default=_sc_league_default,
+                                key=f"ts_sc_leagues_{sel_team}")
+
     _sc_pal_opts = [
         "Red–Gold–Green (diverging)", "Light-grey → Black",
         "Light-Red → Dark-Red", "Light-Blue → Dark-Blue",
@@ -1393,8 +1409,9 @@ def _sc_map_colors(cvals, palette, rev):
         return np.array([0,0,0])/255.0
     return [tuple(_mc(palette, float(v))) for v in t]
 
-_sc_pool = df[sc_x].notna() & df[sc_y].notna() & df[sc_colour_metric].notna()
-_sc_df   = df[_sc_pool].copy()
+_sc_pool = df[df["League"].isin(sc_leagues)] if sc_leagues else df
+_sc_pool_mask = _sc_pool[sc_x].notna() & _sc_pool[sc_y].notna() & _sc_pool[sc_colour_metric].notna()
+_sc_df   = _sc_pool[_sc_pool_mask].copy()
 for _c in [sc_x, sc_y, sc_colour_metric]:
     _sc_df[_c] = pd.to_numeric(_sc_df[_c], errors="coerce")
 _sc_df = _sc_df.dropna(subset=[sc_x, sc_y, sc_colour_metric, "Team"])
@@ -1671,17 +1688,13 @@ if row_a is not None and row_b is not None and radar_comp_avail:
         ax_c.plot(_ang, _pb, 'o', color=_COL_B, markersize=4, zorder=4)
 
     # Headers (editable labels)
-    _sub_a = f"{row_a.get('League','') if hasattr(row_a,'get') else row_a['League']}"
-    _sub_b = f"{row_b.get('League','') if hasattr(row_b,'get') else row_b['League']}"
-    _ppg_a = f"{float(row_a.get('Points p90', row_a.get('Points','?'))):.2f} pts/g" if "Points p90" in df.columns else ""
-    _ppg_b = f"{float(row_b.get('Points p90', row_b.get('Points','?'))):.2f} pts/g" if "Points p90" in df.columns else ""
+    _sub_a = str(row_a["League"]) if "League" in row_a.index else ""
+    _sub_b = str(row_b["League"]) if "League" in row_b.index else ""
 
-    fig_c.text(0.12, 0.96,  comp_team_a_label, color=_COL_A, fontsize=22, fontweight="bold",  ha="left")
+    fig_c.text(0.12, 0.96,  comp_team_a_label, color=_COL_A, fontsize=22, fontweight="bold", ha="left")
     fig_c.text(0.12, 0.935, _sub_a,            color=_COL_A, fontsize=11, ha="left")
-    fig_c.text(0.12, 0.915, _ppg_a,            color=_CR_MINS, fontsize=10, ha="left")
-    fig_c.text(0.88, 0.96,  comp_team_b_label, color=_COL_B, fontsize=22, fontweight="bold",  ha="right")
+    fig_c.text(0.88, 0.96,  comp_team_b_label, color=_COL_B, fontsize=22, fontweight="bold", ha="right")
     fig_c.text(0.88, 0.935, _sub_b,            color=_COL_B, fontsize=11, ha="right")
-    fig_c.text(0.88, 0.915, _ppg_b,            color=_CR_MINS, fontsize=10, ha="right")
 
     if comp_show_title and comp_custom_title.strip():
         fig_c.text(0.5, 0.985, comp_custom_title.strip(), ha="center", fontsize=16,
