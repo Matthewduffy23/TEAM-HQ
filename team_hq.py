@@ -159,6 +159,9 @@ METRIC_LABELS = {
 def mlabel(col):
     return METRIC_LABELS.get(col, col)
 
+# Metrics where lower = better (used in sidebar filters, leaderboard, scatter, radar)
+INVERT_METRICS = {"xG Against p90", "Goals Against p90", "Shots Against p90", "PPDA", "Goals Against"}
+
 # ─────────────────────────────────────────────
 # REGION / PRESET MAPS
 # ─────────────────────────────────────────────
@@ -282,7 +285,6 @@ if df.empty:
 # ─────────────────────────────────────────────
 # COMPOSITE SCORES
 # ─────────────────────────────────────────────
-INVERT_METRICS = {"xG Against p90", "Goals Against p90", "Shots Against p90", "PPDA", "Goals Against"}
 
 def pct_rank(series: pd.Series, invert: bool = False) -> pd.Series:
     r = series.rank(pct=True) * 100
@@ -1887,11 +1889,12 @@ else:
                     try: v = float(v)
                     except: return ""
                     v = np.clip(v, 0, 100)
-                    if v >= 70:   return "background-color:#166534;color:#fff"
-                    elif v >= 55: return "background-color:#15803d;color:#fff"
-                    elif v >= 40: return "background-color:#4d7c0f;color:#fff"
-                    elif v >= 25: return "background-color:#ca8a04;color:#000"
-                    else:         return "background-color:#b91c1c;color:#fff"
+                    if v >= 80:   return "background-color:#14532d;color:#fff"   # dark green
+                    elif v >= 65: return "background-color:#166534;color:#fff"   # green
+                    elif v >= 50: return "background-color:#15803d;color:#fff"   # mid green
+                    elif v >= 35: return "background-color:#ca8a04;color:#000"   # amber
+                    elif v >= 20: return "background-color:#ea580c;color:#fff"   # orange
+                    else:         return "background-color:#b91c1c;color:#fff"   # red
 
                 _fmt_dict = {"Similarity": "{:.1f}"}
                 for _cc in _ctx_avail:
