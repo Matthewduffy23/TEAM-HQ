@@ -166,12 +166,52 @@ INVERT_METRICS = {"xG Against p90", "Goals Against p90", "Shots Against p90", "P
 # REGION / PRESET MAPS
 # ─────────────────────────────────────────────
 PRESET_LEAGUES = {
-    "Top 5 Europe": {"England 1", "Spain 1", "Germany 1", "Italy 1", "France 1"},
-    "Top 10 Europe": {"England 1","Spain 1","Germany 1","Italy 1","France 1",
-                      "Netherlands 1","Portugal 1","Belgium 1","Turkey 1","England 2"},
-    "EFL": {"England 2","England 3","England 4"},
-    "Australia": {"Australia 1"},
+    "Top 5 Europe":    {"England 1", "Spain 1", "Germany 1", "Italy 1", "France 1"},
+    "Top 20 Europe":   {
+        "England 1","Italy 1","Spain 1","Germany 1","France 1",
+        "England 2","Portugal 1","Belgium 1","Turkey 1","Germany 2","Spain 2","France 2",
+        "Netherlands 1","Austria 1","Switzerland 1","Denmark 1","Croatia 1","Italy 2","Czech 1","Norway 1"
+    },
+    "EFL (England 2–4)": {"England 2","England 3","England 4"},
 }
+
+LEAGUE_STRENGTHS = {
+    "England 1":100.00,"Spain 1":87.84,"Germany 1":87.45,"Italy 1":85.88,"France 1":83.14,
+    "England 2":75.10,"Belgium 1":74.51,"Brazil 1":74.31,"Portugal 1":72.94,"Argentina 1":71.37,
+    "USA 1":70.00,"Denmark 1":70.78,"Poland 1":69.61,"Turkey 1":69.02,"Netherlands 1":69.02,
+    "Croatia 1":68.43,"Germany 2":68.04,"Japan 1":67.84,"Switzerland 1":67.45,"Spain 2":67.06,
+    "Norway 1":66.67,"Mexico 1":66.47,"Sweden 1":66.27,"Colombia 1":65.88,"Czech 1":65.29,
+    "Ecuador 1":65.29,"Greece 1":64.12,"Italy 2":63.53,"Hungary 1":63.53,"Austria 1":63.33,
+    "Morocco 1":63.14,"Korea 1":62.75,"France 2":64.00,"England 3":61.96,"Romania 1":61.76,
+    "Scotland 1":61.76,"Uruguay 1":60.39,"Chile 1":59.80,"Israel 1":58.43,"Slovenia 1":57.45,
+    "Slovakia 1":56.47,"Azerbaijan 1":56.47,"South Africa 1":56.27,"Germany 3":54.51,
+    "Ukraine 1":54.31,"Portugal 2":53.14,"Bulgaria 1":53.14,"Australia 1":52.75,
+    "Serbia 1":52.16,"Albania 1":51.96,"Bosnia 1":51.76,"Kosovo 1":51.37,"Japan 2":50.98,
+    "England 4":50.78,"Ireland 1":50.59,"Russia 1":62.41,"Kazakhstan 1":50.39,
+    "France 3":49.61,"Tunisia 1":49.22,"Belgium 2":48.43,"Finland 1":48.43,"Armenia 1":47.84,
+    "Georgia 1":47.65,"Switzerland 2":46.47,"Iceland 1":46.08,"Norway 2":45.88,
+    "Sweden 2":45.69,"China 1":44.70,"Turkey 2":44.51,"Czech 2":43.33,"Netherlands 2":42.16,
+    "Italy 3":45.00,"Denmark 2":40.39,"Moldova 1":40.39,"USA 2":40.00,"Latvia 1":40.00,
+    "Montenegro 1":39.80,"Scotland 2":38.63,"Austria 2":38.24,"England 5":33.33,
+    "Estonia 1":40.00,"Northern Ireland 1":30.98,"England 6":16.08,
+}
+
+GBE_LEAGUE_BANDS = {
+    "England 1":1,"England 2":1,"England 3":1,"England 4":1,"England 5":1,"England 6":1,
+    "Scotland 1":1,"Scotland 2":1,"Wales 1":1,"Ireland 1":1,"Northern Ireland 1":1,
+    "Spain 1":1,"Germany 1":1,"Italy 1":1,"France 1":1,
+    "Portugal 1":2,"Netherlands 1":2,"Belgium 1":2,"Turkey 1":2,
+    "USA 1":3,"Brazil 1":3,"Argentina 1":3,"Mexico 1":3,
+    "Czech 1":4,"Croatia 1":4,"Switzerland 1":4,"Spain 2":4,"Germany 2":4,
+    "Ukraine 1":4,"Greece 1":4,"Colombia 1":4,"Austria 1":4,"Denmark 1":4,
+    "France 2":4,"Russia 1":4,
+    "Serbia 1":5,"Poland 1":5,"Slovenia 1":5,"Chile 1":5,"Uruguay 1":5,
+    "Sweden 1":5,"Norway 1":5,"Italy 2":5,"Hungary 1":5,"Japan 1":5,
+    "Korea 1":5,"Australia 1":5,
+}
+
+def gbe_league_band(league_name: str) -> int:
+    return int(GBE_LEAGUE_BANDS.get(str(league_name).strip(), 6))
 
 COUNTRY_TO_REGION = {
     "England":"Europe","Spain":"Europe","Germany":"Europe","Italy":"Europe","France":"Europe",
@@ -186,10 +226,16 @@ COUNTRY_TO_REGION = {
     "Estonia":"Europe","Northern Ireland":"Europe","Wales":"Europe","Russia":"Europe",
     "Kazakhstan":"Europe","Lithuania":"Europe","Malta":"Europe","Moldova":"Europe",
     "Israel":"Europe","Turkey":"Asia","Australia":"Oceania",
+    "Brazil":"South America","Argentina":"South America","Colombia":"South America",
+    "Ecuador":"South America","Uruguay":"South America","Chile":"South America",
+    "USA":"North America","Mexico":"North America","Japan":"Asia","Korea":"Asia",
+    "China":"Asia","Azerbaijan":"Asia","Morocco":"Africa","Tunisia":"Africa",
+    "South Africa":"Africa","Georgia":"Europe",
 }
 
 def league_country(lg: str) -> str:
-    return re.sub(r"\s*\d+\s*$", "", str(lg)).strip()
+    s = re.sub(r"\s*\d+\s*$", "", str(lg)).strip().rstrip(".")
+    return s
 
 def league_region(lg: str) -> str:
     return COUNTRY_TO_REGION.get(league_country(lg), "Other")
@@ -203,26 +249,63 @@ with st.sidebar:
     all_leagues = sorted(df_raw["League"].dropna().unique().tolist()) if "League" in df_raw.columns else []
     all_regions = sorted({league_region(lg) for lg in all_leagues})
 
+    # ── Regions ──
     sel_regions = st.multiselect("Regions", all_regions, default=all_regions, key="ts_regions")
+    region_leagues = [lg for lg in all_leagues if league_region(lg) in sel_regions]
 
+    # ── League Presets ──
     st.markdown("#### League Presets")
     pc1, pc2, pc3 = st.columns(3)
-    use_top5  = pc1.checkbox("Top 5",  False, key="ts_top5")
-    use_top10 = pc2.checkbox("Top 10", False, key="ts_top10")
-    use_efl   = pc3.checkbox("EFL",    False, key="ts_efl")
-    use_aus   = st.checkbox("Australia", False, key="ts_aus")
+    use_top5    = pc1.checkbox("Top 5",  False, key="ts_top5")
+    use_top20   = pc2.checkbox("Top 20", False, key="ts_top20")
+    use_efl     = pc3.checkbox("EFL",    False, key="ts_efl")
 
+    # ── GBE Bands ──
+    st.markdown("#### GBE Bands")
+    _band_cols = st.columns(3)
+    use_band1 = _band_cols[0].checkbox("Band 1", False, key="ts_band1")
+    use_band2 = _band_cols[1].checkbox("Band 2", False, key="ts_band2")
+    use_band3 = _band_cols[2].checkbox("Band 3", False, key="ts_band3")
+    _band_cols2 = st.columns(3)
+    use_band4 = _band_cols2[0].checkbox("Band 4", False, key="ts_band4")
+    use_band5 = _band_cols2[1].checkbox("Band 5", False, key="ts_band5")
+    use_band6 = _band_cols2[2].checkbox("Band 6", False, key="ts_band6")
+
+    # ── League Strength Slider ──
+    st.markdown("#### League Strength")
+    use_strength = st.toggle("Filter by league strength", False, key="ts_use_strength")
+    if use_strength:
+        strength_range = st.slider("Strength range (0–100)", 0, 100, (50, 100), key="ts_strength_range")
+    else:
+        strength_range = (0, 100)
+
+    # Build seed from presets + bands
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
-    if use_top10: seed |= PRESET_LEAGUES["Top 10 Europe"]
-    if use_efl:   seed |= PRESET_LEAGUES["EFL"]
-    if use_aus:   seed |= PRESET_LEAGUES["Australia"]
+    if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
+    if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    region_leagues = [lg for lg in all_leagues if league_region(lg) in sel_regions]
+    _sel_bands = set()
+    for _b, _flag in [(1,use_band1),(2,use_band2),(3,use_band3),(4,use_band4),(5,use_band5),(6,use_band6)]:
+        if _flag:
+            _sel_bands.add(_b)
+    if _sel_bands:
+        seed |= {lg for lg in region_leagues if gbe_league_band(lg) in _sel_bands}
+
+    # Strength filter applied to seed/region pool
+    def _lg_strength(lg):
+        return LEAGUE_STRENGTHS.get(str(lg).strip(), 50.0)
+
+    if use_strength:
+        region_leagues = [lg for lg in region_leagues if strength_range[0] <= _lg_strength(lg) <= strength_range[1]]
+        seed = {lg for lg in seed if strength_range[0] <= _lg_strength(lg) <= strength_range[1]}
+
     seed = {x for x in seed if x in region_leagues}
     default_leagues = sorted(seed) if seed else region_leagues
 
-    preset_sig = (tuple(sorted(sel_regions)), use_top5, use_top10, use_efl, use_aus)
+    preset_sig = (tuple(sorted(sel_regions)), use_top5, use_top20, use_efl,
+                  use_band1, use_band2, use_band3, use_band4, use_band5, use_band6,
+                  use_strength, strength_range)
     if st.session_state.get("ts_preset_sig") != preset_sig:
         st.session_state["ts_preset_sig"] = preset_sig
         st.session_state["ts_leagues_sel"] = default_leagues
@@ -234,6 +317,10 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.markdown("#### Matches Played")
+    min_matches = st.slider("Min matches played", 0, 80, 5, key="ts_min_matches")
+
+    st.markdown("---")
     st.markdown("#### Score Filter")
     score_filter_type = st.selectbox(
         "Filter by score", ["None","Overall","Attack","Defense","Possession"],
@@ -242,9 +329,12 @@ with st.sidebar:
     score_threshold = st.slider("Min percentile score", 0, 100, 0, key="ts_score_thresh")
 
 # ─────────────────────────────────────────────
-# APPLY LEAGUE FILTER
+# APPLY LEAGUE + MATCHES FILTER
 # ─────────────────────────────────────────────
 df = df_raw[df_raw["League"].isin(leagues_sel)].copy() if leagues_sel else df_raw.copy()
+
+if "Matches" in df.columns:
+    df = df[pd.to_numeric(df["Matches"], errors="coerce").fillna(0) >= min_matches]
 
 if df.empty:
     st.warning("No teams match current filters.")
@@ -1815,6 +1905,7 @@ with st.expander("Similar Teams settings", expanded=False):
         key=f"ts_sim_leagues_{sel_team}",
     )
     st_top_n = st.number_input("Show top N", min_value=5, max_value=100, value=20, step=5, key="ts_sim_topn")
+    st_use_ls_adj = st.toggle("Adjust similarity by league strength (β=0.4)", value=False, key="ts_sim_ls_adj")
 
     with st.expander("Feature weights (1–5)", expanded=False):
         st_adv_weights = {}
@@ -1885,6 +1976,21 @@ else:
 
                 # ── Final: 50/50 blend of both signals ──
                 _sims = ((_sims_pct * 0.5) + (_sims_act * 0.5)).round(1)
+
+                # ── Optional league strength adjustment (β=0.4) ──
+                # Penalises/rewards similarity based on how close league strengths are.
+                # ratio = min(ls_a, ls_b) / max(ls_a, ls_b) ∈ (0,1]; 1 = same strength
+                # adjusted = sim × ((1−β) + β × ratio)  →  max penalty 40% for very different leagues
+                if st_use_ls_adj:
+                    _beta = 0.4
+                    _tgt_ls = float(LEAGUE_STRENGTHS.get(str(_sim_tgt_league).strip(), 50.0))
+                    _cand_ls = np.array([
+                        float(LEAGUE_STRENGTHS.get(str(r).strip(), 50.0))
+                        for r in _cand_df["League"]
+                    ])
+                    _eps = 1e-6
+                    _ratio = np.minimum(_cand_ls, _tgt_ls) / (np.maximum(_cand_ls, _tgt_ls) + _eps)
+                    _sims = (_sims * ((1 - _beta) + _beta * _ratio)).round(1)
 
                 # ── Output table: merge actual values from df so they survive sort ──
                 _out = _cand_df[["Team", "League"]].copy().reset_index(drop=True)
