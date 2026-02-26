@@ -841,40 +841,40 @@ else:
     plt.close(fig)
 
     # ── Style / Strengths / Weaknesses ──
-    # Each metric maps to optional style label and/or strengths/weaknesses label
+    # Covers ALL metrics — not limited to radar metrics
     STYLE_TEAM = {
         "Crosses p90":              {"style": "Create Chances via Crosses"},
-        "Goals p90":                {"style": "Attacking",                  "sw": "Scoring Goals"},
-        "xG p90":                                                            {"sw": "Chance Creation"},
-        "Shots p90":                                                         {"sw": "Shot Volume"},
-        "Touches in Box p90":       {"style": "Effective Attack",           "sw": "Penalty Box Entries"},
-        "Goals Against p90":        {"style": "Solid Defensive Structure",  "sw": "Preventing Goals",    "sw_weak": "Conceding Goals"},
-        "xG Against p90":           {"style": "Chance Prevention",          "sw": "Preventing Chances",  "sw_weak": "Conceding Chances"},
+        "Goals p90":                {"style": "Attacking",                         "sw": "Scoring Goals",              "sw_weak": "Scoring Goals"},
+        "xG p90":                   {                                               "sw": "Chance Creation",            "sw_weak": "Chance Creation"},
+        "Shots p90":                {                                               "sw": "Shot Volume",                "sw_weak": "Shot Volume"},
+        "Touches in Box p90":       {"style": "Effective Attacking Sequences",     "sw": "Penalty Box Entries",        "sw_weak": "Penalty Box Entries"},
+        "Goals Against p90":        {"style": "Solid Defensive Structure",         "sw": "Preventing Goals",           "sw_weak": "Conceding Goals"},
+        "xG Against p90":           {"style": "Chance Prevention",                 "sw": "Preventing Chances",         "sw_weak": "Conceding Chances"},
         "Aerial Duels p90":         {"style": "High Balls"},
-        "Aerial Duels Won %":                                                {"sw": "Aerial Duels",       "sw_weak": "Losing Aerial Duels"},
+        "Aerial Duels Won %":       {                                               "sw": "Aerial Duels",               "sw_weak": "Aerial Duels"},
         "Defensive Duels p90":      {"style": "Duel Heavy"},
-        "Defensive Duels Won %":                                             {"sw": "Defensive Duels",    "sw_weak": "Losing Defensive Duels"},
-        "Shots Against p90":                                                 {"sw": "Limiting Shots Against", "sw_weak": "Conceding Many Shots"},
-        "PPDA":                     {"style": "Intense Out of Possession",  "sw": "Pressing",            "sw_weak": "Weak Press"},
+        "Defensive Duels Won %":    {                                               "sw": "Defensive Duels",            "sw_weak": "Defensive Duels"},
+        "Shots Against p90":        {                                               "sw": "Limiting Opposition Shots",  "sw_weak": "Conceding Many Shots"},
+        "PPDA":                     {"style": "Press Intense Out of Possession",   "sw": "Pressing",                   "sw_weak": "Pressing"},
         "Dribbles p90":             {"style": "Break Lines via Carries"},
-        "Possession %":             {"style": "Control Games with the Ball","sw": "Game Control"},
+        "Possession %":             {"style": "Control Games with the Ball",       "sw": "Game Control",               "sw_weak": "Game Control"},
         "Passes p90":               {"style": "Build Up via Passing Sequences"},
-        "Pass Accuracy %":                                                   {"sw": "Ball Retention"},
+        "Pass Accuracy %":          {                                               "sw": "Ball Retention",             "sw_weak": "Ball Retention"},
         "Long Passes p90":          {"style": "Direct Build Up"},
         "Long Pass Accuracy %":     {"style": "Calculated Vertical Build Up"},
-        "Passes to Final Third p90":                                         {"sw": "Final 3rd Entries"},
-        "Progressive Passes p90":                                            {"sw": "Passing Progression"},
-        "Progressive Runs p90":                                              {"sw": "Ball Carriers"},
+        "Passes to Final Third p90":{                                               "sw": "Final 3rd Entries",          "sw_weak": "Final 3rd Entries"},
+        "Progressive Passes p90":   {                                               "sw": "Passing Progression",        "sw_weak": "Passing Progression"},
+        "Progressive Runs p90":     {                                               "sw": "Ball Carriers",              "sw_weak": "Ball Carriers"},
     }
 
-    HI, LO, STYLE_T = 70, 30, 65
+    HI, LO, STYLE_T = 70, 35, 65
     strengths, weaknesses, styles = [], [], []
-    for m in RADAR_METRICS_TEAM:
+    # Loop over ALL metrics in STYLE_TEAM — not just radar metrics
+    for m, cfg in STYLE_TEAM.items():
         if m not in df.columns: continue
         p = team_pct(team_row, pool, m, m in INVERT_METRICS)
-        cfg = STYLE_TEAM.get(m, {})
         sw_str  = cfg.get("sw")
-        sw_weak = cfg.get("sw_weak", sw_str)  # fallback to sw if no specific weakness label
+        sw_weak = cfg.get("sw_weak", sw_str)
         sty     = cfg.get("style")
         if sw_str and p >= HI:
             strengths.append(sw_str)
