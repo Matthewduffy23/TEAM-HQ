@@ -841,20 +841,30 @@ else:
     plt.close(fig)
 
     # ── Style / Strengths / Weaknesses ──
+    # Each metric maps to optional style label and/or strengths/weaknesses label
     STYLE_TEAM = {
-        "Possession %":    {"style":"Possession-based","sw":"Possession"},
-        "Passes p90":      {"style":"High passing volume","sw":"Passing Volume"},
-        "Pass Accuracy %": {"style":"Technical passing","sw":"Passing Accuracy"},
-        "PPDA":            {"style":"High press","sw":"Pressing"},
-        "xG p90":          {"style":"Creates many chances","sw":"Chance Creation"},
-        "Goals p90":       {"style":"Clinical in front of goal","sw":"Goalscoring"},
-        "Shots p90":       {"style":"High shot volume","sw":"Shot Volume"},
-        "Touches in Box p90":{"style":"Gets into the box often","sw":"Box Penetration"},
-        "xG Against p90":  {"style":"Solid defensively","sw":"Defensive Solidity"},
-        "Goals Against p90":{"style":"Hard to beat","sw":"Goals Conceded"},
-        "Shots Against p90":{"style":"Limits opponent shots","sw":"Shot Prevention"},
-        "Progressive Passes p90":{"style":"Progressive ball movement","sw":"Progression"},
-        "Progressive Runs p90":{"style":"Dynamic runners","sw":"Carries"},
+        "Crosses p90":              {"style": "Create Chances via Crosses"},
+        "Goals p90":                {"style": "Attacking",                  "sw": "Scoring Goals"},
+        "xG p90":                                                            {"sw": "Chance Creation"},
+        "Shots p90":                                                         {"sw": "Shot Volume"},
+        "Touches in Box p90":       {"style": "Effective Attack",           "sw": "Penalty Box Entries"},
+        "Goals Against p90":        {"style": "Solid Defensive Structure",  "sw": "Preventing Goals",    "sw_weak": "Conceding Goals"},
+        "xG Against p90":           {"style": "Chance Prevention",          "sw": "Preventing Chances",  "sw_weak": "Conceding Chances"},
+        "Aerial Duels p90":         {"style": "High Balls"},
+        "Aerial Duels Won %":                                                {"sw": "Aerial Duels",       "sw_weak": "Losing Aerial Duels"},
+        "Defensive Duels p90":      {"style": "Duel Heavy"},
+        "Defensive Duels Won %":                                             {"sw": "Defensive Duels",    "sw_weak": "Losing Defensive Duels"},
+        "Shots Against p90":                                                 {"sw": "Limiting Shots Against", "sw_weak": "Conceding Many Shots"},
+        "PPDA":                     {"style": "Intense Out of Possession",  "sw": "Pressing",            "sw_weak": "Weak Press"},
+        "Dribbles p90":             {"style": "Break Lines via Carries"},
+        "Possession %":             {"style": "Control Games with the Ball","sw": "Game Control"},
+        "Passes p90":               {"style": "Build Up via Passing Sequences"},
+        "Pass Accuracy %":                                                   {"sw": "Ball Retention"},
+        "Long Passes p90":          {"style": "Direct Build Up"},
+        "Long Pass Accuracy %":     {"style": "Calculated Vertical Build Up"},
+        "Passes to Final Third p90":                                         {"sw": "Final 3rd Entries"},
+        "Progressive Passes p90":                                            {"sw": "Passing Progression"},
+        "Progressive Runs p90":                                              {"sw": "Ball Carriers"},
     }
 
     HI, LO, STYLE_T = 70, 30, 65
@@ -862,11 +872,14 @@ else:
     for m in RADAR_METRICS_TEAM:
         if m not in df.columns: continue
         p = team_pct(team_row, pool, m, m in INVERT_METRICS)
-        cfg = STYLE_TEAM.get(m,{})
-        sw = cfg.get("sw"); sty = cfg.get("style")
-        if sw:
-            if p >= HI: strengths.append(sw)
-            elif p <= LO: weaknesses.append(sw)
+        cfg = STYLE_TEAM.get(m, {})
+        sw_str  = cfg.get("sw")
+        sw_weak = cfg.get("sw_weak", sw_str)  # fallback to sw if no specific weakness label
+        sty     = cfg.get("style")
+        if sw_str and p >= HI:
+            strengths.append(sw_str)
+        if sw_weak and p <= LO:
+            weaknesses.append(sw_weak)
         if sty and p >= STYLE_T:
             styles.append(sty)
 
