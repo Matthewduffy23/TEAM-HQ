@@ -234,38 +234,6 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("#### Metric Filter")
-    avail_numeric = [c for c in NUMERIC_COLS if c in df_raw.columns]
-
-    _mf_num = st.number_input("Number of metric filters", 1, 5, 1, key="ts_mf_num")
-    _metric_filters = []
-    for _mfi in range(int(_mf_num)):
-        st.markdown(f"**Filter {_mfi+1}**" if int(_mf_num) > 1 else "")
-        _mf_col = st.selectbox(
-            "Metric", ["None"] + avail_numeric,
-            format_func=lambda x: "None" if x == "None" else mlabel(x),
-            key=f"ts_mf_col_{_mfi}"
-        )
-        if _mf_col != "None":
-            _mf_mode = st.radio("Mode", ["Raw value", "Percentile"],
-                                horizontal=True, key=f"ts_mf_mode_{_mfi}")
-            _is_inv = _mf_col in INVERT_METRICS
-            if _mf_mode == "Raw value":
-                _mf_cmin = float(pd.to_numeric(df_raw[_mf_col], errors="coerce").min()) if _mf_col in df_raw.columns else 0.0
-                _mf_cmax = float(pd.to_numeric(df_raw[_mf_col], errors="coerce").max()) if _mf_col in df_raw.columns else 100.0
-                if _is_inv:
-                    # lower = better: filter by maximum (keep teams ≤ threshold)
-                    _mf_val = st.slider(f"Max {mlabel(_mf_col)}", _mf_cmin, _mf_cmax, _mf_cmax,
-                                        key=f"ts_mf_raw_{_mfi}")
-                else:
-                    _mf_val = st.slider(f"Min {mlabel(_mf_col)}", _mf_cmin, _mf_cmax, _mf_cmin,
-                                        key=f"ts_mf_raw_{_mfi}")
-                _metric_filters.append((_mf_col, _mf_mode, _mf_val, _is_inv))
-            else:
-                _mf_pct = st.slider("Min percentile", 0, 100, 0, key=f"ts_mf_pct_{_mfi}")
-                _metric_filters.append((_mf_col, _mf_mode, _mf_pct, _is_inv))
-
-    st.markdown("---")
     st.markdown("#### Score Filter")
     score_filter_type = st.selectbox(
         "Filter by score", ["None","Overall","Attack","Defense","Possession"],
@@ -353,21 +321,6 @@ df["POS"] = df.apply(compute_possession, axis=1)
 if score_filter_type != "None" and score_threshold > 0:
     scol = {"Overall":"OVR","Attack":"ATT","Defense":"DEF","Possession":"POS"}[score_filter_type]
     df = df[df[scol] >= score_threshold]
-
-# Apply metric filters
-for _mf_col, _mf_mode, _mf_val, _mf_inv in _metric_filters:
-    if _mf_col not in df.columns:
-        continue
-    _mf_series = pd.to_numeric(df[_mf_col], errors="coerce")
-    if _mf_mode == "Raw value":
-        if _mf_inv:
-            df = df[_mf_series <= _mf_val]   # inverted: keep teams at or below max
-        else:
-            df = df[_mf_series >= _mf_val]   # normal: keep teams at or above min
-    else:
-        _pct_col = f"_pct_{_mf_col}"
-        if _pct_col in df.columns:
-            df = df[df[_pct_col] >= _mf_val]
 
 if df.empty:
     st.warning("No teams after filters. Adjust thresholds.")
@@ -619,7 +572,50 @@ pro_league_filter = st.selectbox(
     key="ts_pro_league"
 )
 
+# ── Metric filters ──
+with st.expander("Metric filters", expanded=False):
+    _pro_avail_numeric = [c for c in NUMERIC_COLS if c in df.columns]
+    _pro_mf_num = st.number_input("Number of filters", 1, 5, 1, key="ts_pro_mf_num")
+    _pro_metric_filters = []
+    for _mfi in range(int(_pro_mf_num)):
+        _cols = st.columns([2, 1])
+        _mf_col = _cols[0].selectbox(
+            f"Metric {_mfi+1}", ["None"] + _pro_avail_numeric,
+            format_func=lambda x: "None" if x == "None" else mlabel(x),
+            key=f"ts_pro_mf_col_{_mfi}"
+        )
+        if _mf_col != "None":
+            _mf_mode = _cols[1].radio("Mode", ["Raw", "Percentile"],
+                                      horizontal=True, key=f"ts_pro_mf_mode_{_mfi}")
+            _is_inv = _mf_col in INVERT_METRICS
+            _mf_cmin = float(pd.to_numeric(df[_mf_col], errors="coerce").min())
+            _mf_cmax = float(pd.to_numeric(df[_mf_col], errors="coerce").max())
+            if _mf_mode == "Raw":
+                if _is_inv:
+                    _mf_val = st.slider(f"Max {mlabel(_mf_col)}", _mf_cmin, _mf_cmax, _mf_cmax,
+                                        key=f"ts_pro_mf_raw_{_mfi}")
+                else:
+                    _mf_val = st.slider(f"Min {mlabel(_mf_col)}", _mf_cmin, _mf_cmax, _mf_cmin,
+                                        key=f"ts_pro_mf_raw_{_mfi}")
+                _pro_metric_filters.append((_mf_col, "Raw", _mf_val, _is_inv))
+            else:
+                _mf_pct = st.slider(f"Min percentile — {mlabel(_mf_col)}", 0, 100, 0,
+                                    key=f"ts_pro_mf_pct_{_mfi}")
+                _pro_metric_filters.append((_mf_col, "Percentile", _mf_pct, _is_inv))
+
 df_pro = df_sorted.copy()
+
+# Apply metric filters to pro layout pool
+for _mf_col, _mf_mode, _mf_val, _mf_inv in _pro_metric_filters:
+    if _mf_col not in df_pro.columns:
+        continue
+    _mf_series = pd.to_numeric(df_pro[_mf_col], errors="coerce")
+    if _mf_mode == "Raw":
+        df_pro = df_pro[_mf_series <= _mf_val] if _mf_inv else df_pro[_mf_series >= _mf_val]
+    else:
+        _pct_col = f"_pct_{_mf_col}"
+        if _pct_col in df_pro.columns:
+            df_pro = df_pro[df_pro[_pct_col] >= _mf_val]
 if pro_search:
     df_pro = df_pro[df_pro["Team"].str.contains(pro_search, case=False, na=False)]
 if pro_league_filter != "All":
