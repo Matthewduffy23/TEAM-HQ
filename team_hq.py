@@ -816,19 +816,19 @@ else:
     ax.spines['polar'].set_visible(False)
     ax.grid(False)
 
-    # ── Info line inside figure (Team • League • Matches • Points rank • xPoints rank) ──
+    # ── Info line above chart (like player app) ──
     _pts_pos, _pts_n   = get_league_pos(team_row, df, "Points", ascending=False)
     _xpts_pos, _xpts_n = get_league_pos(team_row, df, "Expected Points", ascending=False)
     _pts_rank_str  = f"{_pts_pos}/{_pts_n}"   if _pts_pos  is not None else "—"
     _xpts_rank_str = f"{_xpts_pos}/{_xpts_n}" if _xpts_pos is not None else "—"
-    _matches_val   = team_row.get("Matches", np.nan)
-    _matches_str   = str(int(_matches_val)) if pd.notna(_matches_val) else "—"
-    _pts_val       = team_row.get("Points", np.nan)
-    _pts_val_str   = str(int(_pts_val)) if pd.notna(_pts_val) else "—"
-    _xpts_val      = team_row.get("Expected Points", np.nan)
-    _xpts_val_str  = f"{float(_xpts_val):.1f}" if pd.notna(_xpts_val) else "—"
-    _info_line = (
-        f"{sel_team}  •  {team_league}  •  Matches: {_matches_str}  •  "
+    _matches_val  = team_row.get("Matches", np.nan)
+    _matches_str  = str(int(_matches_val)) if pd.notna(_matches_val) else "—"
+    _pts_val      = team_row.get("Points", np.nan)
+    _pts_val_str  = str(int(_pts_val)) if pd.notna(_pts_val) else "—"
+    _xpts_val     = team_row.get("Expected Points", np.nan)
+    _xpts_val_str = f"{float(_xpts_val):.1f}" if pd.notna(_xpts_val) else "—"
+    st.caption(
+        f"**{sel_team}** — {team_league}  •  Matches: {_matches_str}  •  "
         f"Points: {_pts_val_str} ({_pts_rank_str} League Rank)  •  "
         f"xPoints: {_xpts_val_str} ({_xpts_rank_str} League Rank)"
     )
@@ -840,8 +840,6 @@ else:
     if profile_subtitle.strip():
         fig.text(0.05, 0.935, profile_subtitle.strip(), fontsize=9,
                  ha='left', color='gray')
-    # Info line — third row, same style as player app subtitle
-    fig.text(0.05, 0.910, _info_line, fontsize=8, ha='left', color='#444444')
 
     # Badge in top-right corner
     badge_img = get_team_badge(sel_team)
