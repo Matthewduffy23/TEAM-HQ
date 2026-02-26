@@ -829,8 +829,8 @@ else:
     _xpts_val_str = f"{float(_xpts_val):.1f}" if pd.notna(_xpts_val) else "—"
     st.caption(
         f"**{sel_team}** — {team_league}  •  Matches: {_matches_str}  •  "
-        f"Points: {_pts_val_str} ({_pts_rank_str} League Rank)  •  "
-        f"xPoints: {_xpts_val_str} ({_xpts_rank_str} League Rank)"
+        f"Points: {_pts_val_str} ({_pts_rank_str})  •  "
+        f"xPoints: {_xpts_val_str} ({_xpts_rank_str})"
     )
 
     # Title lines (editable)
