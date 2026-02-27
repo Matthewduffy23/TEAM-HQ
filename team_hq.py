@@ -34,7 +34,7 @@ def _read_csv_path(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 csv_candidates = list(Path.cwd().glob("all_leagues_stats.csv")) + list(Path.cwd().glob("*.csv"))
-csv_candidates = [c for c in csv_candidates if not c.name.startswith("WORLD")]
+csv_candidates = sorted(set(csv_candidates), key=lambda c: c.name)
 
 if csv_candidates:
     _csv_names = [c.name for c in csv_candidates]
