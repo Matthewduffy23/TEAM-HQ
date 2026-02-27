@@ -1544,6 +1544,390 @@ else:
 st.markdown("---")
 
 # ══════════════════════════════════════════════════════
+# SECTION 5B – TEAM ONE-PAGER
+# ══════════════════════════════════════════════════════
+st.subheader("📄 Team One-Pager")
+
+_op_team = sel_team
+_op_row  = df[df["Team"] == _op_team]
+
+if _op_row.empty:
+    st.info("Team not found.")
+else:
+    _op_row    = _op_row.iloc[0]
+    _op_league = str(_op_row.get("League", ""))
+    _op_pool   = df[df["League"] == _op_league]
+
+    # ── Optional extras ──
+    _oc1, _oc2, _oc3 = st.columns(3)
+    _op_use_fp       = _oc1.toggle("Show £ Performance", False, key="op_use_fp")
+    _op_show_form    = _oc2.toggle("Show Formation", False,      key="op_show_form")
+    _op_fp_rank = _op_fp_n = 1
+    _op_fp_pct  = 0.0
+    if _op_use_fp:
+        _op_fp_rank = _oc1.number_input("£ Perf rank", 1, 200, 1,  key="op_fp_rank")
+        _op_fp_n    = _oc2.number_input("Out of",       2, 200, max(2, len(_op_pool)), key="op_fp_n")
+        _op_fp_pct  = float(np.clip((_op_fp_n - _op_fp_rank) / (_op_fp_n - 1) * 100, 0, 100))
+    _op_formation = ""
+    if _op_show_form:
+        _op_formation = _oc3.text_input("Formation", "4-3-3", key="op_formation")
+
+    # ── pct helper ──
+    def _op_pct(col, invert=False):
+        if col not in _op_pool.columns: return 0.0
+        s = pd.to_numeric(_op_pool[col], errors="coerce").dropna()
+        v = float(_op_row[col]) if pd.notna(_op_row.get(col)) else np.nan
+        if pd.isna(v) or s.empty: return 0.0
+        p = (s < v).mean()*100 + (s == v).mean()*50
+        return float(np.clip((100-p) if invert else p, 0, 100))
+
+    # ── Style logic ──
+    _poss_p  = _op_pct("Possession %")
+    _ppda_p  = _op_pct("PPDA", invert=True)
+    _lpass_p = _op_pct("Long Passes p90")
+    _pass_p  = _op_pct("Passes p90")
+    _xga_p   = _op_pct("xG Against p90", invert=True)
+    _xg_p    = _op_pct("xG p90")
+    _aerial_p= _op_pct("Aerial Duels p90")
+
+    if _poss_p >= 75 and _ppda_p >= 70:
+        _op_style = "Possession-Pressing"
+    elif _poss_p >= 75:
+        _op_style = "Possession"
+    elif _ppda_p >= 70:
+        _op_style = "Pressing"
+    elif _lpass_p >= 70 and _poss_p < 70 and _pass_p < 70:
+        _op_style = "Long Ball"
+    elif _xga_p >= 70 and _xg_p >= 70 and _poss_p < 70 and _ppda_p < 70:
+        _op_style = "Effective-Structured"
+    elif 45 <= _poss_p < 70:
+        _op_style = "Mixed"
+    elif _aerial_p >= 70:
+        _op_style = "Low Block"
+    else:
+        _op_style = "No Style"
+
+    # ── Strengths / Weaknesses from STYLE_TEAM ──
+    _op_strengths, _op_weaknesses, _op_styles_from_map = [], [], []
+    _OP_STYLE_TEAM = {
+        "Crosses p90":              {"style": "Create Chances via Crosses"},
+        "Goals p90":                {"style": "Attacking",                       "sw": "Scoring Goals",             "sw_weak": "Scoring Goals"},
+        "xG p90":                   {                                             "sw": "Chance Creation",           "sw_weak": "Chance Creation"},
+        "Shots p90":                {                                             "sw": "Shot Volume",               "sw_weak": "Shot Volume"},
+        "Touches in Box p90":       {"style": "Effective Attacking Sequences",   "sw": "Penalty Box Entries",       "sw_weak": "Penalty Box Entries"},
+        "Goals Against p90":        {"style": "Solid Defensive Structure",       "sw": "Preventing Goals",          "sw_weak": "Conceding Goals"},
+        "xG Against p90":           {"style": "Chance Prevention",               "sw": "Preventing Chances",        "sw_weak": "Conceding Chances"},
+        "Aerial Duels p90":         {"style": "High Balls"},
+        "Aerial Duels Won %":       {                                             "sw": "Aerial Duels",              "sw_weak": "Aerial Duels"},
+        "Defensive Duels p90":      {"style": "Duel Heavy"},
+        "Defensive Duels Won %":    {                                             "sw": "Defensive Duels",           "sw_weak": "Defensive Duels"},
+        "Shots Against p90":        {                                             "sw": "Limiting Shots",            "sw_weak": "Conceding Many Shots"},
+        "PPDA":                     {"style": "Press Intense Out of Possession", "sw": "Pressing",                  "sw_weak": "Pressing"},
+        "Dribbles p90":             {"style": "Break Lines via Carries"},
+        "Possession %":             {"style": "Control Games with the Ball",     "sw": "Game Control",              "sw_weak": "Game Control"},
+        "Passes p90":               {"style": "Build Up via Passing Sequences"},
+        "Pass Accuracy %":          {                                             "sw": "Ball Retention",            "sw_weak": "Ball Retention"},
+        "Long Passes p90":          {"style": "Direct Build Up"},
+        "Long Pass Accuracy %":     {"style": "Calculated Vertical Build Up"},
+        "Passes to Final Third p90":{                                             "sw": "Final 3rd Entries",         "sw_weak": "Final 3rd Entries"},
+        "Progressive Passes p90":   {                                             "sw": "Passing Progression",       "sw_weak": "Passing Progression"},
+        "Progressive Runs p90":     {                                             "sw": "Ball Carriers",             "sw_weak": "Ball Carriers"},
+    }
+    _OP_HI, _OP_LO, _OP_ST = 70, 35, 65
+    for _m, _cfg in _OP_STYLE_TEAM.items():
+        if _m not in df.columns: continue
+        _p = _op_pct(_m, _m in INVERT_METRICS)
+        if _cfg.get("sw")      and _p >= _OP_HI: _op_strengths.append(_cfg["sw"])
+        if _cfg.get("sw_weak") and _p <= _OP_LO: _op_weaknesses.append(_cfg.get("sw_weak", _cfg.get("sw","")))
+    _op_strengths  = list(dict.fromkeys(_op_strengths))[:8]
+    _op_weaknesses = list(dict.fromkeys(_op_weaknesses))[:8]
+
+    # ── Info values ──
+    def _opv(col, fmt="{:.0f}"):
+        v = _op_row.get(col, np.nan)
+        try: return fmt.format(float(v)) if pd.notna(v) else "—"
+        except: return "—"
+
+    _pts_pos, _pts_n     = get_league_pos(_op_row, df, "Points",          ascending=False)
+    _xpts_pos, _xpts_n   = get_league_pos(_op_row, df, "Expected Points", ascending=False)
+    _pts_rank_str  = f"{_pts_pos}/{_pts_n}"   if _pts_pos  is not None else "—"
+    _xpts_rank_str = f"{_xpts_pos}/{_xpts_n}" if _xpts_pos is not None else "—"
+
+    # ── Score data ──
+    _op_ovr = float(_op_row.get("OVR", 0) or 0)
+    _op_att = float(_op_row.get("ATT", 0) or 0)
+    _op_def = float(_op_row.get("DEF", 0) or 0)
+    _op_pos = float(_op_row.get("POS", 0) or 0)
+
+    # ── Feature-F-style percentile data ──
+    _OP_ATT_F = [
+        ("Crosses",           "Crosses p90",         False),
+        ("Crossing Acc %",    "Cross Accuracy %",    False),
+        ("Goals Scored",      "Goals p90",           False),
+        ("xG",                "xG p90",              False),
+        ("Shots",             "Shots p90",           False),
+        ("Shooting %",        "Shot Accuracy %",     False),
+        ("Touches in Box",    "Touches in Box p90",  False),
+    ]
+    _OP_DEF_F = [
+        ("Goals Against",     "Goals Against p90",      True),
+        ("xG Against",        "xG Against p90",         True),
+        ("Aerial Duels",      "Aerial Duels p90",       False),
+        ("Aerial Win %",      "Aerial Duels Won %",     False),
+        ("Def Duels",         "Defensive Duels p90",    False),
+        ("Def Duel Win %",    "Defensive Duels Won %",  False),
+        ("Shots Against",     "Shots Against p90",      True),
+        ("PPDA",              "PPDA",                   True),
+    ]
+    _OP_POS_F = [
+        ("Dribbles",          "Dribbles p90",              False),
+        ("Possession",        "Possession %",              False),
+        ("Passes",            "Passes p90",                False),
+        ("Pass Acc %",        "Pass Accuracy %",           False),
+        ("Long Passes",       "Long Passes p90",           False),
+        ("Long Pass %",       "Long Pass Accuracy %",      False),
+        ("Passes Final 3rd",  "Passes to Final Third p90", False),
+        ("Prog Passes",       "Progressive Passes p90",    False),
+        ("Prog Runs",         "Progressive Runs p90",      False),
+    ]
+
+    def _op_val_f(col):
+        v = _op_row.get(col, np.nan)
+        if pd.isna(v): return "—"
+        fv = float(v)
+        return f"{fv:.1f}"
+
+    _op_sections_f = [
+        ("Attacking",  [(_lab, _op_pct(_col, _inv), _op_val_f(_col))
+                        for _lab, _col, _inv in _OP_ATT_F if _col in df.columns]),
+        ("Defensive",  [(_lab, _op_pct(_col, _inv), _op_val_f(_col))
+                        for _lab, _col, _inv in _OP_DEF_F if _col in df.columns]),
+        ("Possession", [(_lab, _op_pct(_col, _inv), _op_val_f(_col))
+                        for _lab, _col, _inv in _OP_POS_F if _col in df.columns]),
+    ]
+
+    # ── Colour helpers ──
+    _OP_RED   = np.array([199, 54,  60])
+    _OP_GOLD  = np.array([240,197, 106])
+    _OP_GREEN = np.array([ 61,166,  91])
+
+    def _op_p2rgb(v):
+        v = float(np.clip(v, 0, 100))
+        if v <= 50:
+            t = v / 50.0; c = _OP_RED   + (_OP_GOLD  - _OP_RED)  * t
+        else:
+            t = (v-50)/50.0; c = _OP_GOLD + (_OP_GREEN - _OP_GOLD) * t
+        return tuple((np.clip(c,0,255)/255.0).astype(float))
+
+    def _op_score_color(v):
+        """Same thresholds as rating_color but returns (bg_hex, fg_hex)."""
+        v = float(v)
+        if v >= 85: return "#2E6114","#fff"
+        if v >= 75: return "#5C9E2E","#fff"
+        if v >= 66: return "#7FBC41","#000"
+        if v >= 54: return "#A7D763","#000"
+        if v >= 44: return "#F6D645","#000"
+        if v >= 25: return "#D77A2E","#fff"
+        return "#C63733","#fff"
+
+    def _op_style_color(sty):
+        _sc = {"Possession":"#3b82f6","Pressing":"#f97316",
+                "Possession-Pressing":"#8b5cf6","Long Ball":"#a16207",
+                "Effective-Structured":"#0891b2","Mixed":"#6b7280",
+                "Low Block":"#64748b","No Style":"#374151"}
+        return _sc.get(sty, "#6b7280")
+
+    # ── Build matplotlib figure ──
+    _OP_W, _OP_H = 1400, 900
+    _fig_op = plt.figure(figsize=(_OP_W/100, _OP_H/100), dpi=100)
+    _fig_op.patch.set_facecolor("#0a0f1c")
+    _ax_op = _fig_op.add_axes([0,0,1,1])
+    _ax_op.set_xlim(0,1); _ax_op.set_ylim(0,1); _ax_op.axis("off")
+    _ax_op.add_patch(Rectangle((0,0),1,1,color="#0a0f1c",zorder=0))
+
+    # ── constants ──
+    _OP_TXT   = "#E5E7EB"
+    _OP_SUB   = "#9CA3AF"
+    _OP_DIV   = "#1e2d45"
+    _OP_TRACK = "#1b2636"
+    _OP_AX_BG = "#0f151f"
+    _L = 0.03; _R = 0.97
+
+    # ─── HEADER ───────────────────────────────────────────
+    # Crest
+    _op_badge_img = get_team_badge(_op_team)
+    if _op_badge_img is not None:
+        _axcr = _fig_op.add_axes([_L, 0.845, 0.075, 0.13])
+        _axcr.imshow(_op_badge_img); _axcr.axis("off")
+
+    # Team name
+    _fig_op.text(_L+0.085, 0.955, _op_team.upper(),
+                 fontsize=32, fontweight="900", color="#ffffff", va="top", ha="left")
+
+    # OVR badge
+    _ovr_bg, _ovr_fg = _op_score_color(_op_ovr)
+    _fig_op.patches.append(mpatches.FancyBboxPatch(
+        (_L+0.085+0.28, 0.896), 0.068, 0.060,
+        boxstyle="round,pad=0.002,rounding_size=0.010",
+        transform=_fig_op.transFigure,
+        facecolor=_ovr_bg, edgecolor="none"))
+    _fig_op.text(_L+0.085+0.28+0.034, 0.926, f"OVR {int(round(_op_ovr))}",
+                 fontsize=13, fontweight="900", color=_ovr_fg, va="center", ha="center")
+
+    # Style badge
+    _sty_c = _op_style_color(_op_style)
+    _fig_op.patches.append(mpatches.FancyBboxPatch(
+        (_L+0.085+0.355, 0.896), 0.12, 0.060,
+        boxstyle="round,pad=0.002,rounding_size=0.010",
+        transform=_fig_op.transFigure,
+        facecolor=_sty_c, edgecolor="none"))
+    _fig_op.text(_L+0.085+0.355+0.060, 0.926, _op_style,
+                 fontsize=11, fontweight="800", color="#ffffff", va="center", ha="center")
+
+    # League logo (right side)
+    _op_lg_url = _get_league_logo_url(_op_league)
+    if _op_lg_url:
+        _op_lg_img = load_remote_img(_op_lg_url)
+        if _op_lg_img is not None:
+            _axlg = _fig_op.add_axes([0.90, 0.87, 0.07, 0.10])
+            _axlg.imshow(_op_lg_img); _axlg.axis("off")
+
+    # ─── INFO LINE ────────────────────────────────────────
+    _info_parts = [
+        _op_league,
+        f"Games: {_opv('Matches','{:.0f}')}",
+        f"GF: {_opv('Goals For','{:.0f}')}",
+        f"GA: {_opv('Goals Against','{:.0f}')}",
+        f"Pts: {_opv('Points','{:.0f}')} ({_pts_rank_str})",
+        f"xPts: {_opv('Expected Points','{:.1f}')} ({_xpts_rank_str})",
+        f"Avg Age: {_opv('Avg Age','{:.1f}')}",
+    ]
+    if _op_use_fp:
+        _info_parts.append(f"£ Perf: {int(round(_op_fp_pct))}th pct")
+    if _op_show_form and _op_formation:
+        _info_parts.append(f"Formation: {_op_formation}")
+
+    _fig_op.text(_L, 0.845, "  •  ".join(_info_parts),
+                 fontsize=10.5, color=_OP_SUB, va="top", ha="left")
+
+    # ─── SCORE BADGES (ATT / DEF / POS) ──────────────────
+    _score_badges = [("ATT", _op_att), ("DEF", _op_def), ("POS", _op_pos)]
+    _sb_x = _L
+    for _slabel, _sval in _score_badges:
+        _sbg, _sfg = _op_score_color(_sval)
+        _fig_op.patches.append(mpatches.FancyBboxPatch(
+            (_sb_x, 0.782), 0.075, 0.050,
+            boxstyle="round,pad=0.002,rounding_size=0.008",
+            transform=_fig_op.transFigure,
+            facecolor=_sbg, edgecolor="none"))
+        _fig_op.text(_sb_x+0.0375, 0.807, f"{_slabel} {int(round(_sval))}",
+                     fontsize=11, fontweight="900", color=_sfg, va="center", ha="center")
+        _sb_x += 0.082
+
+    # ─── STRENGTHS / WEAKNESSES chips ─────────────────────
+    def _op_chips(fig, items, color, y, x0=None, fs=9.5):
+        if not items: return y
+        x0 = x0 or _L
+        x = x0; pad_x=0.005; pad_y=0.003
+        for s in items:
+            _t = fig.text(0, 0, s, fontsize=fs, fontweight="800",
+                          transform=fig.transFigure, alpha=0)
+            fig.canvas.draw()
+            _ren = fig.canvas.get_renderer()
+            _tw = _t.get_window_extent(renderer=_ren).width / fig.bbox.width
+            _th = _t.get_window_extent(renderer=_ren).height / fig.bbox.height
+            _t.remove()
+            _w = _tw + pad_x*2; _h = _th + pad_y*2
+            if x + _w > _R - 0.01:
+                x = x0; y -= _h + 0.008
+            fig.patches.append(mpatches.FancyBboxPatch(
+                (x, y - _h*0.75), _w, _h,
+                boxstyle=f"round,pad=0.001,rounding_size={_h*0.4}",
+                transform=fig.transFigure, facecolor=color, edgecolor="none"))
+            fig.text(x+pad_x, y - _h*0.3, s, fontsize=fs, color="#111",
+                     va="center", ha="left", fontweight="800")
+            x += _w + 0.006
+        return y - _h - 0.008
+
+    _chip_y = 0.775
+    if _op_strengths:
+        _fig_op.text(_L, _chip_y+0.001, "Strengths:", fontsize=8.5,
+                     color=_OP_SUB, va="bottom", ha="left")
+        _chip_y -= 0.005
+        _chip_y = _op_chips(_fig_op, _op_strengths, "#a7f3d0", _chip_y)
+    if _op_weaknesses:
+        _fig_op.text(_L, _chip_y+0.001, "Weaknesses:", fontsize=8.5,
+                     color=_OP_SUB, va="bottom", ha="left")
+        _chip_y -= 0.005
+        _chip_y = _op_chips(_fig_op, _op_weaknesses, "#fecaca", _chip_y)
+
+    # ─── PERCENTILE BARS (3-column Feature-F style) ───────
+    _bar_top  = _chip_y - 0.018
+    _col_w    = (_R - _L - 0.04) / 3.0
+    _gutter   = 0.14   # label gutter within each column
+    _BAR_FRAC = 0.72
+    _ticks_op = np.arange(0, 101, 25)
+
+    for _si, (_stitle, _sdata) in enumerate(_op_sections_f):
+        _col_l = _L + _si * (_col_w + 0.02)
+        _n = len(_sdata)
+        if _n == 0: continue
+        _row_h = (_bar_top - 0.06) / max(_n, 1)
+
+        # section title
+        _fig_op.text(_col_l, _bar_top + 0.005, _stitle.upper(),
+                     fontsize=12, fontweight="900", color=_OP_TXT, va="bottom", ha="left")
+
+        # axes
+        _bx = _col_l + _gutter
+        _bw = _col_w - _gutter
+        _bh = _n * _row_h
+        _by = _bar_top - _bh
+
+        _ax_bg = _fig_op.add_axes([_col_l, _by, _col_w, _bh])
+        _ax_bg.set_facecolor(_OP_AX_BG)
+        for _sp in _ax_bg.spines.values(): _sp.set_visible(False)
+        _ax_bg.set_xticks([]); _ax_bg.set_yticks([])
+
+        _ax_b = _fig_op.add_axes([_bx, _by, _bw, _bh])
+        _ax_b.set_facecolor(_OP_AX_BG)
+        _ax_b.set_xlim(0, 100); _ax_b.set_ylim(-0.5, _n - 0.5)
+        for _sp in _ax_b.spines.values(): _sp.set_visible(False)
+        _ax_b.set_xticks([]); _ax_b.set_yticks([])
+
+        _yi = np.arange(_n)[::-1]
+        for _i in range(_n):
+            _ax_b.add_patch(plt.Rectangle((0, _yi[_i]-_BAR_FRAC/2), 100, _BAR_FRAC,
+                                           color=_OP_TRACK, ec="none", zorder=0.5))
+        for _tk in _ticks_op:
+            _ax_b.vlines(_tk, -0.5, _n-0.5, colors=(1,1,1,0.12), lw=0.7, zorder=0.75)
+
+        for _i, (_lab, _pct, _val) in enumerate(_sdata[::-1]):
+            _bw_bar = float(np.clip(_pct, 0, 100))
+            _ax_b.add_patch(plt.Rectangle((0, _i-_BAR_FRAC/2), _bw_bar, _BAR_FRAC,
+                                           color=_op_p2rgb(_bw_bar), ec="none", zorder=1))
+            _ax_b.text(101, _i, _val, va="center", ha="left", fontsize=7.5,
+                       fontweight="700", color=_OP_TXT, zorder=2)
+            # label (left gutter, on figure)
+            _yf = _by + _bh * ((_i + 0.5) / _n)
+            _fig_op.text(_col_l + 0.002, _yf, _lab, fontsize=8, fontweight="bold",
+                         color=_OP_TXT, va="center", ha="left")
+
+        _ax_b.axvline(50, color="#ffffff", ls=(0,(3,3)), lw=1.2, alpha=0.7, zorder=3)
+
+    # ─── Download ─────────────────────────────────────────
+    st.pyplot(_fig_op, use_container_width=True)
+    _buf_op = io.BytesIO()
+    _fig_op.savefig(_buf_op, format="png", dpi=150, bbox_inches="tight", facecolor="#0a0f1c")
+    st.download_button("⬇️ Download Team One-Pager",
+                       _buf_op.getvalue(),
+                       f"{_op_team.replace(' ','_')}_onepager.png",
+                       "image/png")
+    plt.close(_fig_op)
+
+st.markdown("---")
+
+# ══════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════
 # SECTION 6 – LEADERBOARD
 # ══════════════════════════════════════════════════════
