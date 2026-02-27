@@ -1562,7 +1562,7 @@ else:
     _oc1, _oc2, _oc3 = st.columns(3)
     _op_use_fp    = _oc1.toggle("Show £ Performance", False, key="op_use_fp")
     _op_show_form = _oc2.toggle("Show Formation",     False, key="op_show_form")
-    _op_fp_pct    = None   # None = blank
+    _op_fp_pct    = None
     if _op_use_fp:
         _op_fp_rank = _oc1.number_input("£ Perf rank", 1, 200, 1,  key="op_fp_rank")
         _op_fp_n    = _oc2.number_input("Out of", 2, 200, max(2, len(_op_pool)), key="op_fp_n")
@@ -1571,7 +1571,7 @@ else:
     if _op_show_form:
         _op_formation = _oc3.text_input("Formation", "4-3-3", key="op_formation")
 
-    # ── pct helper (same as Team Profile) ──
+    # ── pct helper ──
     def _op_pct(col, invert=False):
         if col not in _op_pool.columns: return 0.0
         s = pd.to_numeric(_op_pool[col], errors="coerce").dropna()
@@ -1589,18 +1589,18 @@ else:
     _p_xg    = _op_pct("xG p90")
     _p_aer   = _op_pct("Aerial Duels p90")
 
-    if   _p_poss >= 75 and _p_ppda >= 70:                                         _op_style = "Possession-Pressing Based"
-    elif _p_poss >= 75:                                                            _op_style = "Possession Based"
-    elif _p_poss >= 65 and _p_lpass >= 65:                                        _op_style = "Vertical Possession Approach"
-    elif _p_ppda >= 70:                                                            _op_style = "Pressing"
-    elif _p_lpass >= 70 and _p_poss < 70 and _p_pass < 70:                        _op_style = "Long Ball Style"
-    elif _p_xga >= 70 and _p_xg >= 70 and _p_poss < 70 and _p_ppda < 70:         _op_style = "Effective-Structured"
+    if   _p_poss >= 75 and _p_ppda >= 70:                                           _op_style = "Possession-Pressing Based"
+    elif _p_poss >= 75:                                                              _op_style = "Possession Based"
+    elif _p_poss >= 65 and _p_lpass >= 65:                                          _op_style = "Vertical Possession Approach"
+    elif _p_ppda >= 70:                                                              _op_style = "Pressing"
+    elif _p_lpass >= 70 and _p_poss < 70 and _p_pass < 70:                          _op_style = "Long Ball Style"
+    elif _p_xga >= 70 and _p_xg >= 70 and _p_poss < 70 and _p_ppda < 70:           _op_style = "Effective-Structured"
     elif 35<=_p_poss<=65 and 35<=_p_xg<=65 and 35<=_p_xga<=65 and 35<=_p_pass<=65: _op_style = "Balanced Style"
-    elif 35 <= _p_poss < 70:                                                       _op_style = "Mixed"
-    elif _p_aer >= 70:                                                             _op_style = "Low Block"
-    else:                                                                          _op_style = "No Defined Style"
+    elif 35 <= _p_poss < 70:                                                         _op_style = "Mixed"
+    elif _p_aer >= 70:                                                               _op_style = "Low Block"
+    else:                                                                            _op_style = "No Defined Style"
 
-    # ── Strengths / Weaknesses / Styles — exact copy of Team Profile STYLE_TEAM ──
+    # ── Exact STYLE_TEAM as specified ──
     _OP_STYLE_TEAM = {
         "Crosses p90":              {"style": "Create Chances via Crosses"},
         "Goals p90":                {"style": "Attacking",                        "sw": "Scoring Goals",             "sw_weak": "Scoring Goals"},
@@ -1630,8 +1630,8 @@ else:
     for _mc, _cfg in _OP_STYLE_TEAM.items():
         if _mc not in df.columns: continue
         _pp = _op_pct(_mc, _mc in INVERT_METRICS)
-        if _cfg.get("sw")      and _pp >= _HI:     _op_strengths.append(_cfg["sw"])
-        if _cfg.get("sw_weak") and _pp <= _LO:     _op_weaknesses.append(_cfg["sw_weak"])
+        if _cfg.get("sw")      and _pp >= _HI:      _op_strengths.append(_cfg["sw"])
+        if _cfg.get("sw_weak") and _pp <= _LO:      _op_weaknesses.append(_cfg["sw_weak"])
         if _cfg.get("style")   and _pp >= _STYLE_T: _op_styles.append(_cfg["style"])
     _op_strengths  = list(dict.fromkeys(_op_strengths))[:8]
     _op_weaknesses = list(dict.fromkeys(_op_weaknesses))[:8]
@@ -1685,9 +1685,7 @@ else:
         ("Shots Against",  "Shots Against p90"),
         ("PPDA",           "PPDA"),
     ])
-
-    # Possession panel: extra performance rows at the bottom
-    _OP_POS_base = _triples([
+    _OP_POS = _triples([
         ("Dribbles",         "Dribbles p90"),
         ("Possession",       "Possession %"),
         ("Passes",           "Passes p90"),
@@ -1699,51 +1697,46 @@ else:
         ("Prog Runs",        "Progressive Runs p90"),
     ])
 
-    # xPts/game and Pts/game as percentile rows
+    # ── Performance panel: Points, xPoints, £ Perf ──
     _op_matches = float(_op_r.get("Matches", np.nan)) if pd.notna(_op_r.get("Matches")) else np.nan
-    _op_pts_raw = float(_op_r.get("Points", np.nan))   if pd.notna(_op_r.get("Points"))  else np.nan
-    _op_xpts_raw= float(_op_r.get("Expected Points",np.nan)) if pd.notna(_op_r.get("Expected Points")) else np.nan
+    _op_pts_raw = float(_op_r.get("Points",  np.nan)) if pd.notna(_op_r.get("Points"))  else np.nan
+    _op_xpts_raw= float(_op_r.get("Expected Points", np.nan)) if pd.notna(_op_r.get("Expected Points")) else np.nan
 
-    # compute per-game rates
-    def _per_game(raw, matches):
-        if pd.isna(raw) or pd.isna(matches) or matches == 0: return np.nan
-        return raw / matches
+    def _per_game(raw, m):
+        return raw/m if (pd.notna(raw) and pd.notna(m) and m>0) else np.nan
 
     _op_ppg  = _per_game(_op_pts_raw,  _op_matches)
     _op_xppg = _per_game(_op_xpts_raw, _op_matches)
 
-    # percentiles for per-game rates within league pool
-    def _pool_pct_series(col, divisor_col):
-        if col not in _op_pool.columns or divisor_col not in _op_pool.columns: return pd.Series(dtype=float)
-        raw  = pd.to_numeric(_op_pool[col], errors="coerce")
-        div  = pd.to_numeric(_op_pool[divisor_col], errors="coerce").replace(0, np.nan)
-        return (raw / div).dropna()
-
-    _ppg_series  = _pool_pct_series("Points", "Matches")
-    _xppg_series = _pool_pct_series("Expected Points", "Matches")
+    def _pool_rate_pct(col, div_col):
+        if col not in _op_pool.columns or div_col not in _op_pool.columns: return pd.Series(dtype=float)
+        r = pd.to_numeric(_op_pool[col],     errors="coerce")
+        d = pd.to_numeric(_op_pool[div_col], errors="coerce").replace(0, np.nan)
+        return (r/d).dropna()
 
     def _rate_pct(val, series):
         if pd.isna(val) or series.empty: return 0.0
-        return float(np.clip((series < val).mean()*100 + (series == val).mean()*50, 0, 100))
+        return float(np.clip((series<val).mean()*100+(series==val).mean()*50, 0, 100))
 
-    _ppg_pct  = _rate_pct(_op_ppg,  _ppg_series)
-    _xppg_pct = _rate_pct(_op_xppg, _xppg_series)
+    _ppg_s   = _pool_rate_pct("Points",          "Matches")
+    _xppg_s  = _pool_rate_pct("Expected Points",  "Matches")
+    _ppg_pct = _rate_pct(_op_ppg,  _ppg_s)
+    _xppg_pct= _rate_pct(_op_xppg, _xppg_s)
 
-    # format display values
-    _ppg_str  = f"{_op_ppg:.2f}"  if pd.notna(_op_ppg)  else "—"
-    _xppg_str = f"{_op_xppg:.2f}" if pd.notna(_op_xppg) else "—"
-
-    # build performance rows
-    _perf_rows = []
-    if pd.notna(_op_ppg):  _perf_rows.append(("Pts/Game",  _ppg_pct,  _ppg_str))
-    if pd.notna(_op_xppg): _perf_rows.append(("xPts/Game", _xppg_pct, _xppg_str))
+    _OP_PERF = []
+    if pd.notna(_op_pts_raw):
+        _OP_PERF.append(("Points",     _op_pct("Points",  False), _opval("Points")))
+    if pd.notna(_op_xpts_raw):
+        _OP_PERF.append(("xPoints",    _op_pct("Expected Points", False), _opval("Expected Points")))
+    if pd.notna(_op_ppg):
+        _OP_PERF.append(("Pts/Game",   _ppg_pct,  f"{_op_ppg:.2f}"))
+    if pd.notna(_op_xppg):
+        _OP_PERF.append(("xPts/Game",  _xppg_pct, f"{_op_xppg:.2f}"))
     if _op_fp_pct is not None:
-        _perf_rows.append(("£ Performance", float(_op_fp_pct), f"{int(round(_op_fp_pct))}th pct"))
-
-    _OP_POS = _OP_POS_base + _perf_rows
+        _OP_PERF.append(("£ Perf",     float(_op_fp_pct), f"{int(round(_op_fp_pct))}th pct"))
 
     # ════════════════════════════════════════════════════════════
-    # FIGURE — identical constants / helpers to player one-pager
+    # FIGURE CONSTANTS — identical to player one-pager
     # ════════════════════════════════════════════════════════════
     PAGE_BG   = "#0a0f1c"
     PANEL_BG  = "#11161C"
@@ -1765,7 +1758,7 @@ else:
         return tuple(((c1+(c2-c1)*t)/255.0).astype(float))
 
     def _rc(v):
-        v = float(v)
+        v=float(v)
         if v>=85: return "#2E6114","#fff"
         if v>=75: return "#5C9E2E","#fff"
         if v>=66: return "#7FBC41","#000"
@@ -1775,23 +1768,23 @@ else:
         return "#C63733","#fff"
 
     def _tw(fig, s, *, fontsize=8, weight="normal"):
-        t = fig.text(0,0,s,fontsize=fontsize,fontweight=weight,
-                     transform=fig.transFigure,alpha=0)
+        t=fig.text(0,0,s,fontsize=fontsize,fontweight=weight,
+                   transform=fig.transFigure,alpha=0)
         fig.canvas.draw()
-        try:    r = fig.canvas.get_renderer()
-        except: r = getattr(fig.canvas,"renderer",None)
+        try:    r=fig.canvas.get_renderer()
+        except: r=getattr(fig.canvas,"renderer",None)
         if r is None: t.remove(); return len(str(s))*fontsize*0.55/fig.bbox.width
-        w = t.get_window_extent(renderer=r).width; t.remove()
+        w=t.get_window_extent(renderer=r).width; t.remove()
         return w/fig.bbox.width
 
     def _th(fig, s="Hg", *, fontsize=8, weight="normal"):
-        t = fig.text(0,0,s,fontsize=fontsize,fontweight=weight,
-                     transform=fig.transFigure,alpha=0)
+        t=fig.text(0,0,s,fontsize=fontsize,fontweight=weight,
+                   transform=fig.transFigure,alpha=0)
         fig.canvas.draw()
-        try:    r = fig.canvas.get_renderer()
-        except: r = getattr(fig.canvas,"renderer",None)
+        try:    r=fig.canvas.get_renderer()
+        except: r=getattr(fig.canvas,"renderer",None)
         if r is None: t.remove(); return fontsize*1.4/fig.bbox.height
-        h = t.get_window_extent(renderer=r).height; t.remove()
+        h=t.get_window_extent(renderer=r).height; t.remove()
         return h/fig.bbox.height
 
     # chip_row — identical to player one-pager
@@ -1799,10 +1792,10 @@ else:
                   max_rows=2, gap_x=0.006, max_per_row=99):
         if not items: return y
         x0=x=0.055; row_gap=0.026; pad_x=0.004; pad_y=0.002
-        h = _th(fig,"Hg",fontsize=fs,weight=weight)+pad_y*2
+        h=_th(fig,"Hg",fontsize=fs,weight=weight)+pad_y*2
         per_row=0
         for s in items[:60]:
-            w = _tw(fig,s,fontsize=fs,weight=weight)+pad_x*2
+            w=_tw(fig,s,fontsize=fs,weight=weight)+pad_x*2
             if (x+w>0.965) or (max_per_row and per_row>=max_per_row):
                 max_rows-=1
                 if max_rows<=0: break
@@ -1818,15 +1811,15 @@ else:
 
     # bar_panel — identical to player one-pager
     def _bar_panel(fig, left, top, width, triples, title):
-        n = len(triples)
+        n=len(triples)
         fig.canvas.draw()
-        ax_h = max(1,n)*STEP_PX / fig.bbox.height
-        bottom = top - ax_h
-        labels = [t[0] for t in triples]
-        max_lw = max((_tw(fig,s,fontsize=LABEL_FS,weight="bold") for s in labels),default=0)
-        gutter = max_lw + 0.006
+        ax_h=max(1,n)*STEP_PX/fig.bbox.height
+        bottom=top-ax_h
+        labels=[t[0] for t in triples]
+        max_lw=max((_tw(fig,s,fontsize=LABEL_FS,weight="bold") for s in labels),default=0)
+        gutter=max_lw+0.006
 
-        ax_bg = fig.add_axes([left,bottom,width,ax_h])
+        ax_bg=fig.add_axes([left,bottom,width,ax_h])
         ax_bg.set_facecolor(PANEL_BG); ax_bg.set_xticks([]); ax_bg.set_yticks([])
         for sp in ax_bg.spines.values(): sp.set_visible(False)
 
@@ -1834,7 +1827,7 @@ else:
         ax=fig.add_axes([bx,bottom,bw2,ax_h])
         ax.set_facecolor(PANEL_BG)
 
-        pcts =[float(np.nan_to_num(t[1],nan=0.0)) for t in triples]
+        pcts=[float(np.nan_to_num(t[1],nan=0.0)) for t in triples]
         texts=[t[2] for t in triples]
         bar_du=BAR_PX/STEP_PX; gap_du=GAP_PX/STEP_PX
         track_h=bar_du+gap_du-SEP_PX/STEP_PX
@@ -1863,32 +1856,38 @@ else:
         ax.plot([0,1],[1,1],transform=ax.transAxes,color="#94A3B8",lw=0.8,alpha=0.35)
         return bottom
 
-    # ── figure height: grows to fit chips + both cols of panels ──
-    _n_chip_r = sum([bool(_op_styles), bool(_op_strengths), bool(_op_weaknesses)])
-    _left_panel_rows = len(_OP_ATT) + len(_OP_DEF) + 3
-    _right_panel_rows = len(_OP_POS) + 2
-    _panel_rows = max(_left_panel_rows, _right_panel_rows)
-    _FIG_H = max(1080, 230 + _n_chip_r*40 + _panel_rows*STEP_PX + 160)
-    _FIG_W = 1500
-    _fig = plt.figure(figsize=(_FIG_W/100, _FIG_H/100), dpi=100)
+    # ── figure height ──
+    _n_chip_r=sum([bool(_op_styles),bool(_op_strengths),bool(_op_weaknesses)])
+    # left col: ATT+DEF+PERF stacked; right col: POS alone
+    _left_rows=len(_OP_ATT)+len(_OP_DEF)+len(_OP_PERF)+6
+    _right_rows=len(_OP_POS)+2
+    _panel_rows=max(_left_rows,_right_rows)
+    _FIG_H=max(1200, 230+_n_chip_r*40+_panel_rows*STEP_PX+200)
+    _FIG_W=1500
+    _fig=plt.figure(figsize=(_FIG_W/100,_FIG_H/100),dpi=100)
     _fig.patch.set_facecolor(PAGE_BG)
 
     # ══════════════════════════════════════════════════════
-    # HEADER — crest left | name + OVR badge | crest right | style label
-    # (same layout as player one-pager exactly)
+    # HEADER
     # ══════════════════════════════════════════════════════
-    _PW=0.10; _PH=100/_FIG_H; _PX=0.050; _PY=1.0-_PH-12/_FIG_H
+    _PW=0.10; _PH=100/_FIG_H; _PX=0.050; _PY=1.0-_PH-14/_FIG_H
 
-    # team crest (left, same slot as player photo)
-    _op_badge = get_team_badge(_op_team)
+    # crest (left)
+    _op_badge=get_team_badge(_op_team)
     if _op_badge is not None:
-        _axcr = _fig.add_axes([_PX, _PY, _PW, _PH])
+        _axcr=_fig.add_axes([_PX,_PY,_PW,_PH])
         _axcr.imshow(_op_badge); _axcr.axis("off")
 
-    # team name
-    _NX=_PX+_PW+0.005; _NY=_PY+_PH+4/_FIG_H; _nfs=28
-    _nt=_fig.text(_NX,_NY,_op_team.upper(),
-                  color="#FFFFFF",fontsize=_nfs,fontweight="900",va="top",ha="left")
+    # team name — top of crest area
+    _NX=_PX+_PW+0.010; _nfs=28
+    # vertically centre name+badge together in the crest height
+    _crest_mid_y = _PY + _PH/2   # midpoint of crest box in figure fraction
+
+    # Draw name, measure it, then reposition so it's vertically centred with badge
+    _nt=_fig.text(_NX, _crest_mid_y, _op_team.upper(),
+                  color="#FFFFFF", fontsize=_nfs, fontweight="900",
+                  va="center", ha="left")
+
     _fig.canvas.draw()
     try:    _ren=_fig.canvas.get_renderer()
     except: _ren=getattr(_fig.canvas,"renderer",None)
@@ -1897,11 +1896,13 @@ else:
         _nw=_nbb.width/_fig.bbox.width; _nh=_nbb.height/_fig.bbox.height
     else:
         _nw=len(_op_team)*_nfs*0.60/_FIG_W; _nh=_nfs*1.4/_FIG_H
-    _NYC=_NY-_nh/2
 
-    # OVR badge — right of name, same BADGE_SCALE=1.28 as player one-pager
+    # name is already va="center" at _crest_mid_y — this IS the vertical centre
+    _NYC = _crest_mid_y
+
+    # OVR badge — vertically centred with name
     _BSCALE=1.28; _bh=_nh*_BSCALE; _bw=_bh
-    _bx=_NX+_nw+0.010; _by=_NYC-_bh/2
+    _bx=_NX+_nw+0.012; _by=_NYC-_bh/2
     _ovr_bg,_ovr_fg=_rc(_op_ovr)
     _fig.patches.append(mpatches.FancyBboxPatch(
         (_bx,_by),_bw,_bh,
@@ -1911,9 +1912,9 @@ else:
               fontsize=18.6*_BSCALE,color=_ovr_fg,
               va="center",ha="center",fontweight="900")
 
-    # league logo — same slot as player crest
-    _CW=0.050; _CH=50/_FIG_H
-    _CX=_bx+_bw+0.018; _CY=_NYC-_CH/2
+    # league logo — right of OVR badge, centred with it
+    _CW=0.048; _CH=48/_FIG_H
+    _CX=_bx+_bw+0.016; _CY=_NYC-_CH/2
     _crest_drawn=False
     _op_lg_url=_get_league_logo_url(_op_league)
     if _op_lg_url:
@@ -1923,13 +1924,13 @@ else:
             _axlg.imshow(_lg_img); _axlg.axis("off")
             _crest_drawn=True
 
-    # style label — grey text right of league logo, same as "Advanced Playmaker CM"
-    _lx=(_CX+_CW+0.012) if _crest_drawn else (_bx+_bw+0.012)
+    # style label — grey text right of league logo, centred with name
+    _lx=(_CX+_CW+0.014) if _crest_drawn else (_bx+_bw+0.014)
     _fig.text(min(_lx,0.975),_NYC,_op_style,
               color="#9CA3AF",fontsize=_nfs*0.58,
               fontweight="700",va="center",ha="left")
 
-    # ── meta line — • separated, same y=0.9 as player one-pager ──
+    # ── meta line — tight under crest ──
     _info_parts=[
         _op_league,
         f"Games: {_opv('Matches')}",
@@ -1940,18 +1941,13 @@ else:
         f"Avg Age: {_opv('Avg Age','{:.1f}')}",
     ]
     if _op_show_form and _op_formation: _info_parts.append(f"Formation: {_op_formation}")
+    # push info line up closer to crest bottom
+    _meta_y = _PY - 4/_FIG_H
+    _fig.text(0.055,_meta_y,"  •  ".join(_info_parts),
+              color="#FFFFFF",fontsize=13,ha="left",va="top")
 
-    _meta_y=_PY-8/_FIG_H
-    _x_meta=0.055; _meta_fs=13
-    _meta_runs=[
-        (_info_parts[0]+" — ","bold"),
-        (" — ".join(_info_parts[1:]),"normal"),
-    ]
-    _fig.text(_x_meta,_meta_y,"  •  ".join(_info_parts),
-              color="#FFFFFF",fontsize=_meta_fs,ha="left",va="top")
-
-    # ── ATT / DEF / POS chips — roles_row_tight style ──
-    _y_roles=_meta_y-22/_FIG_H
+    # ── ATT / DEF / POS score chips ──
+    _y_roles=_meta_y-20/_FIG_H
     _x_role=0.055; _pad_r=0.006; _pad_ry=0.003; _r_fs=10.6
     _r_h=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*2
     for _rlb,_rv in [("ATT",_op_att),("DEF",_op_def),("POS",_op_pos)]:
@@ -1959,7 +1955,6 @@ else:
         _nw2=_tw(_fig,str(int(round(_rv))),fontsize=_r_fs,weight="900")+_pad_r*1.8
         _nh2=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*1.8
         _sc_bg,_sc_fg=_rc(_rv)
-        # grey label pill
         _fig.patches.append(mpatches.FancyBboxPatch(
             (_x_role,_y_roles-_r_h*0.78),_lw,_r_h,
             boxstyle=f"round,pad=0.001,rounding_size={_r_h*0.25}",
@@ -1967,7 +1962,6 @@ else:
         _fig.text(_x_role+_pad_r,_y_roles-_r_h*0.33,_rlb,
                   fontsize=_r_fs,color="#FFFFFF",va="center",ha="left",fontweight="900")
         _x_role+=_lw+0.003
-        # score pill
         _fig.patches.append(mpatches.FancyBboxPatch(
             (_x_role,_y_roles-_nh2*0.78),_nw2,_nh2,
             boxstyle=f"round,pad=0.001,rounding_size={_nh2*0.25}",
@@ -1976,7 +1970,7 @@ else:
                   fontsize=_r_fs,color=_sc_fg,va="center",ha="center",fontweight="900")
         _x_role+=_nw2+0.020
 
-    # ── chip rows: styles (blue) / strengths (green) / weaknesses (red) ──
+    # ── chip rows: styles / strengths / weaknesses ──
     _yc=_y_roles-_r_h-0.006
     _yc=_chip_row(_fig,_op_styles,    _yc,CHIP_B,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_strengths, _yc,CHIP_G,fs=10.1,max_rows=2)
@@ -1984,16 +1978,18 @@ else:
     _yc-=0.009
 
     # ══════════════════════════════════════════════════════
-    # BAR PANELS — original 2-col layout
-    # Left: Attacking (top) + Defensive (below)
-    # Right: Possession (includes Pts/Game, xPts/Game, £ Perf)
+    # BAR PANELS — 2-col layout
+    # Left col:  Attacking (top) + Defensive (middle) + Performance (bottom)
+    # Right col: Possession (full height)
     # ══════════════════════════════════════════════════════
     _L=0.050; _WL=0.41; _MG=0.040; _R=_L+_WL+_MG; _WR=0.41
     _TOP=_yc-0.020; _VG=0.050
 
-    _ab=_bar_panel(_fig,_L,_TOP,   _WL,_OP_ATT,"Attacking")
-    _   =_bar_panel(_fig,_L,_ab-_VG,_WL,_OP_DEF,"Defensive")
-    _   =_bar_panel(_fig,_R,_TOP,   _WR,_OP_POS,"Possession")
+    _ab=_bar_panel(_fig,_L,_TOP,      _WL,_OP_ATT,"Attacking")
+    _db=_bar_panel(_fig,_L,_ab-_VG,  _WL,_OP_DEF,"Defensive")
+    if _OP_PERF:
+        _   =_bar_panel(_fig,_L,_db-_VG,_WL,_OP_PERF,"Performance")
+    _       =_bar_panel(_fig,_R,_TOP,   _WR,_OP_POS,"Possession")
 
     # ── render ──
     st.pyplot(_fig,use_container_width=True)
