@@ -1761,31 +1761,18 @@ else:
     if pd.notna(_op_xppg):
         _OP_PERF.append(("xPPG",  _xppg_pct, f"{_op_xppg:.2f}"))
 
-    # ── xGD (not per 90) ──
-    _xg_v  = float(_op_r.get("xG",           np.nan)) if pd.notna(_op_r.get("xG"))           else np.nan
-    _xga_v = float(_op_r.get("xG Against",   np.nan)) if pd.notna(_op_r.get("xG Against"))   else np.nan
-    # Fallback: try p90 columns and scale by matches
-    if pd.isna(_xg_v) and pd.notna(_op_r.get("xG p90")) and pd.notna(_op_matches):
-        _xg_v = float(_op_r.get("xG p90")) * _op_matches
-    if pd.isna(_xga_v) and pd.notna(_op_r.get("xG Against p90")) and pd.notna(_op_matches):
-        _xga_v = float(_op_r.get("xG Against p90")) * _op_matches
+    # ── xGD: xG p90 minus xGA p90, labelled simply as "xGD" ──
+    _xg_p90_v  = float(_op_r.get("xG p90",         np.nan)) if pd.notna(_op_r.get("xG p90"))         else np.nan
+    _xga_p90_v = float(_op_r.get("xG Against p90", np.nan)) if pd.notna(_op_r.get("xG Against p90")) else np.nan
 
-    if pd.notna(_xg_v) and pd.notna(_xga_v):
-        _xgd_v = _xg_v - _xga_v
-        # Compute pool xGD totals for percentile
-        _xg_s_tot  = pd.to_numeric(_op_pool.get("xG",         pd.Series(dtype=float)), errors="coerce")
-        _xga_s_tot = pd.to_numeric(_op_pool.get("xG Against", pd.Series(dtype=float)), errors="coerce")
-        if _xg_s_tot.empty or _xga_s_tot.empty:
-            # fallback to p90 * matches
-            _xg_s_p  = pd.to_numeric(_op_pool.get("xG p90",         pd.Series(dtype=float)), errors="coerce")
-            _xga_s_p = pd.to_numeric(_op_pool.get("xG Against p90", pd.Series(dtype=float)), errors="coerce")
-            _m_s     = pd.to_numeric(_op_pool.get("Matches",         pd.Series(dtype=float)), errors="coerce").replace(0, np.nan)
-            _xg_s_tot  = (_xg_s_p  * _m_s).dropna()
-            _xga_s_tot = (_xga_s_p * _m_s).dropna()
-        _xgd_s   = (_xg_s_tot - _xga_s_tot).dropna()
+    if pd.notna(_xg_p90_v) and pd.notna(_xga_p90_v):
+        _xgd_v = _xg_p90_v - _xga_p90_v
+        _xg_s  = pd.to_numeric(_op_pool.get("xG p90",         pd.Series(dtype=float)), errors="coerce")
+        _xga_s = pd.to_numeric(_op_pool.get("xG Against p90", pd.Series(dtype=float)), errors="coerce")
+        _xgd_s = (_xg_s - _xga_s).dropna()
         _xgd_pct = float(np.clip((_xgd_s < _xgd_v).mean()*100 + (_xgd_s == _xgd_v).mean()*50, 0, 100)) if not _xgd_s.empty else 0.0
-        _xgd_str = f"{_xgd_v:+.1f}" if _xgd_v != 0 else "0.0"
-        _OP_PERF.append(("xGD", _xgd_pct, _xgd_str))   # ← label is "xGD", not "xGD p90"
+        _xgd_str = f"{_xgd_v:+.2f}" if _xgd_v != 0 else "0.00"
+        _OP_PERF.append(("xGD", _xgd_pct, _xgd_str))  # label = "xGD", value = p90 differential
 
     if _op_fp_pct is not None:
         _fp_rank_disp = int(round(_op_fp_rank)) if _op_use_fp else 1
@@ -1915,7 +1902,7 @@ else:
             ax.add_patch(mpatches.Rectangle((0,yi-bar_du/2),v,bar_du,
                          facecolor=_dc(v),edgecolor="none"))
             ax.text(1.0,yi,t,va="center",ha="left",
-                    color="#0B0B0B",fontsize=VALUE_FS+0.5,weight="700")
+                    color="#FFFFFF",fontsize=VALUE_FS+0.5,weight="700")
         for sp in ax.spines.values(): sp.set_visible(False)
         ax.tick_params(axis="both",length=0,labelsize=0); ax.grid(False)
         ax.axvline(50,color="#E5E7EB",linestyle="--",lw=1.8,alpha=0.85,zorder=5)
