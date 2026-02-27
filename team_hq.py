@@ -1672,7 +1672,6 @@ else:
         ("Goals Scored",   "Goals p90"),
         ("xG",             "xG p90"),
         ("Shots",          "Shots p90"),
-        ("Shooting %",     "Shot Accuracy %"),
         ("Touches in Box", "Touches in Box p90"),
     ])
     _OP_DEF = _triples([
@@ -1728,6 +1727,18 @@ else:
         _OP_PERF.append(("PPG",   _ppg_pct,  f"{_op_ppg:.2f}"))
     if pd.notna(_op_xppg):
         _OP_PERF.append(("xPPG",  _xppg_pct, f"{_op_xppg:.2f}"))
+    # xGD per 90 = xG p90 - xGA p90
+    _xg_p90_v  = float(_op_r.get("xG p90",  np.nan)) if pd.notna(_op_r.get("xG p90"))  else np.nan
+    _xga_p90_v = float(_op_r.get("xG Against p90", np.nan)) if pd.notna(_op_r.get("xG Against p90")) else np.nan
+    if pd.notna(_xg_p90_v) and pd.notna(_xga_p90_v):
+        _xgd_v = _xg_p90_v - _xga_p90_v
+        # percentile: compute xGD for all pool teams
+        _xg_s  = pd.to_numeric(_op_pool.get("xG p90",  pd.Series(dtype=float)), errors="coerce")
+        _xga_s = pd.to_numeric(_op_pool.get("xG Against p90", pd.Series(dtype=float)), errors="coerce")
+        _xgd_s = (_xg_s - _xga_s).dropna()
+        _xgd_pct = float(np.clip((_xgd_s < _xgd_v).mean()*100 + (_xgd_s == _xgd_v).mean()*50, 0, 100)) if not _xgd_s.empty else 0.0
+        _xgd_str = f"{_xgd_v:+.2f}" if _xgd_v != 0 else "0.00"
+        _OP_PERF.append(("xGD p90", _xgd_pct, _xgd_str))
     if _op_fp_pct is not None:
         _fp_rank_disp = int(round(_op_fp_rank)) if _op_use_fp else 1
         _OP_PERF.append(("£ Performance", float(_op_fp_pct),
@@ -1939,7 +1950,7 @@ else:
         f"Avg Age: {_opv('Avg Age','{:.1f}')}",
     ]
     if _op_show_form and _op_formation: _info_parts.append(f"Formation: {_op_formation}")
-    _meta_y = _PY - 8/_FIG_H   # 8px gap below crest
+    _meta_y = _PY - 12/_FIG_H  # 12px gap below crest
     _meta_t = _fig.text(0.055,_meta_y,"  •  ".join(_info_parts),
               color="#FFFFFF",fontsize=13,ha="left",va="top")
     # measure meta line height so score chips sit flush below it
@@ -1952,7 +1963,7 @@ else:
         _mh = 13*1.4/_FIG_H
 
     # ── ATT / DEF / POS score chips ──
-    _y_roles=_meta_y - _mh - 6/_FIG_H
+    _y_roles=_meta_y - _mh - 18/_FIG_H
     _x_role=0.055; _pad_r=0.006; _pad_ry=0.003; _r_fs=10.6
     _r_h=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*2
     for _rlb,_rv in [("ATT",_op_att),("DEF",_op_def),("POS",_op_pos)]:
@@ -1976,7 +1987,7 @@ else:
         _x_role+=_nw2+0.020
 
     # ── chip rows: styles / strengths / weaknesses ──
-    _yc=_y_roles-_r_h-4/_FIG_H   # tight gap below score badges
+    _yc=_y_roles-_r_h-16/_FIG_H  # gap below score badges
     _yc=_chip_row(_fig,_op_styles,    _yc,CHIP_B,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_strengths, _yc,CHIP_G,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_weaknesses,_yc,CHIP_R,fs=10.1,max_rows=2)
