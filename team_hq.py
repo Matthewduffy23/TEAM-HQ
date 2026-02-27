@@ -634,7 +634,7 @@ _TRI_ALL_LABELS = list(_TRI_SCORE_COLS.keys()) + [mlabel(c) for c in _TRI_RAW_CO
 _TRI_RAW_LABEL_TO_COL = {mlabel(c): c for c in _TRI_RAW_COLS}
 
 def _tri_format(val, col_name):
-    """1 dp; append % if metric name contains '%'"""
+    """1 dp; append % if the actual column name contains '%'"""
     try:
         v = float(val)
         if np.isnan(v): return "—"
@@ -648,16 +648,28 @@ with st.expander("Ranking Image settings", expanded=True):
     tri_theme     = _tc2.radio("Theme",   ["Light", "Dark"],       horizontal=True, key="tri_theme")
 
     if tri_rank_mode == "Score":
-        tri_score_choice = st.selectbox("Score", list(_TRI_SCORE_COLS.keys()), key="tri_score_choice")
-        tri_rank_col     = _TRI_SCORE_COLS[tri_score_choice]
-        tri_rank_label   = tri_score_choice
-        tri_is_raw       = False
+        tri_use_combo = st.checkbox("Combine multiple scores (equal weight)", False, key="tri_use_combo")
+        if tri_use_combo:
+            tri_combo_choices = st.multiselect(
+                "Scores to combine", list(_TRI_SCORE_COLS.keys()),
+                default=["Attack", "Pressing"], key="tri_combo_choices"
+            )
+            tri_rank_col   = "_tri_combo"
+            tri_rank_label = " + ".join(tri_combo_choices) if tri_combo_choices else "Overall"
+            tri_is_raw     = False
+            tri_pct_col    = "_tri_combo"   # scores never have % suffix
+        else:
+            tri_score_choice = st.selectbox("Score", list(_TRI_SCORE_COLS.keys()), key="tri_score_choice")
+            tri_rank_col     = _TRI_SCORE_COLS[tri_score_choice]
+            tri_rank_label   = tri_score_choice
+            tri_is_raw       = False
+            tri_pct_col      = tri_rank_col
     else:
-        tri_raw_label    = st.selectbox("Raw metric", [mlabel(c) for c in _TRI_RAW_COLS],
-                                        key="tri_raw_label")
-        tri_rank_col     = _TRI_RAW_LABEL_TO_COL.get(tri_raw_label, _TRI_RAW_COLS[0])
-        tri_rank_label   = tri_raw_label
-        tri_is_raw       = True
+        tri_raw_label = st.selectbox("Raw metric", [mlabel(c) for c in _TRI_RAW_COLS], key="tri_raw_label")
+        tri_rank_col  = _TRI_RAW_LABEL_TO_COL.get(tri_raw_label, _TRI_RAW_COLS[0])
+        tri_rank_label = tri_raw_label
+        tri_is_raw     = True
+        tri_pct_col    = tri_rank_col   # use actual col name for % detection
 
     _lc1, _lc2, _lc3 = st.columns(3)
     tri_league_filter = _lc1.selectbox("Filter by league", ["All"] + sorted(df["League"].dropna().unique()),
@@ -665,16 +677,25 @@ with st.expander("Ranking Image settings", expanded=True):
     tri_top_n  = _lc2.number_input("Top N", 3, 20, 10, key="tri_top_n")
     tri_export = _lc3.selectbox("Export format", ["Standard (auto)", "1920×1080 (banner)"], key="tri_export")
 
-    tri_t1 = st.text_input("Title line 1", "TOP TEAMS",            key="tri_t1")
-    tri_t2 = st.text_input("Title line 2", tri_rank_label.upper(), key="tri_t2")
-    tri_t3 = st.text_input("Title line 3", "TEAM-HQ  |  Wyscout",  key="tri_t3")
+    tri_t1 = st.text_input("Title line 1", "TOP TEAMS",                    key="tri_t1")
+    tri_t2 = st.text_input("Title line 2", tri_rank_label.upper(),         key="tri_t2")
+    tri_t3 = st.text_input("Title line 3", "Performance Index  |  Wyscout", key="tri_t3")
 
 # ── Build display dataframe ──
 _tri_df = df.copy()
 if tri_league_filter != "All":
     _tri_df = _tri_df[_tri_df["League"] == tri_league_filter]
 
-if tri_is_raw:
+# Handle combined score
+if tri_rank_mode == "Score" and tri_use_combo and tri_combo_choices:
+    _valid = [_TRI_SCORE_COLS[s] for s in tri_combo_choices if s in _TRI_SCORE_COLS and _TRI_SCORE_COLS[s] in _tri_df.columns]
+    if _valid:
+        _tri_df["_tri_combo"] = _tri_df[_valid].mean(axis=1)
+    else:
+        _tri_df["_tri_combo"] = _tri_df["OVR"]
+    _tri_df["_tri_val"] = pd.to_numeric(_tri_df["_tri_combo"], errors="coerce")
+    _tri_asc = False
+elif tri_is_raw:
     _tri_asc = tri_rank_col in INVERT_METRICS
     _tri_df["_tri_val"] = pd.to_numeric(_tri_df[tri_rank_col], errors="coerce")
 else:
@@ -684,7 +705,7 @@ else:
 _tri_df = _tri_df.dropna(subset=["_tri_val"]).sort_values("_tri_val", ascending=_tri_asc).head(int(tri_top_n))
 
 # ── Render image ──
-def _tri_make_image(df_show, rank_col, rank_label, is_raw, title_lines, theme, export_mode, top_n):
+def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines, theme, export_mode, top_n):
     if df_show.empty:
         return b""
 
@@ -750,7 +771,7 @@ def _tri_make_image(df_show, rank_col, rank_label, is_raw, title_lines, theme, e
             frac=max(0.0,min(1.0,float(row["_tri_val"])/max_score))
             ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W,BAR_H,color=BAR_BG,zorder=2))
             ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W*frac,BAR_H,color=BAR_FG,zorder=3))
-            ax.text(VAL_X,y,_tri_format(row["_tri_val"],rank_label),
+            ax.text(VAL_X,y,_tri_format(row["_tri_val"],pct_col),
                     fontsize=29,fontweight="bold",color=TXT,ha="right",va="center",zorder=6)
 
         buf=io.BytesIO(); fig.savefig(buf,format="png",dpi=DPI,facecolor=BG); plt.close(fig)
@@ -794,7 +815,7 @@ def _tri_make_image(df_show, rank_col, rank_label, is_raw, title_lines, theme, e
         frac=max(0.0,min(1.0,float(row["_tri_val"])/max_score))
         ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W,BAR_H,color=BAR_BG,zorder=2))
         ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W*frac,BAR_H,color=BAR_FG,zorder=3))
-        ax.text(VAL_X,y,_tri_format(row["_tri_val"],rank_label),
+        ax.text(VAL_X,y,_tri_format(row["_tri_val"],pct_col),
                 fontsize=16,fontweight="bold",color=TXT,ha="right",va="center",zorder=6)
 
     ax.plot([LEFT,RIGHT],[0.82]*2,color=DIV,lw=0.9,zorder=2)
@@ -806,7 +827,7 @@ def _tri_make_image(df_show, rank_col, rank_label, is_raw, title_lines, theme, e
 
 _tri_img = _tri_make_image(
     _tri_df, "OVR" if not tri_is_raw else tri_rank_col,
-    tri_rank_label, tri_is_raw,
+    tri_rank_label, tri_pct_col, tri_is_raw,
     [tri_t1, tri_t2, tri_t3],
     tri_theme, tri_export, int(tri_top_n)
 )
