@@ -2028,19 +2028,15 @@ else:
                     try: v = float(v)
                     except: return ""
                     v = float(np.clip(v, 0, 100))
-                    # Smooth fixed 0-100 diverging: dark-red → orange → yellow → green
-                    # Interpolate through 4 colour stops: 0=dark red, 33=orange, 66=yellow, 100=dark green
-                    _stops = [(140,0,0),(255,100,0),(255,210,0),(30,160,60)]
-                    _pts   = [0, 33, 66, 100]
-                    for _i in range(len(_pts)-1):
-                        if v <= _pts[_i+1]:
-                            _t = (v - _pts[_i]) / (_pts[_i+1] - _pts[_i])
-                            _r = int(_stops[_i][0] + (_stops[_i+1][0]-_stops[_i][0])*_t)
-                            _g = int(_stops[_i][1] + (_stops[_i+1][1]-_stops[_i][1])*_t)
-                            _b = int(_stops[_i][2] + (_stops[_i+1][2]-_stops[_i][2])*_t)
-                            _fg = "#fff" if v < 55 else "#000"
-                            return f"background-color:rgb({_r},{_g},{_b});color:{_fg}"
-                    return "background-color:rgb(30,160,60);color:#000" 
+                    if v >= 85:   bg = "#2E6114"
+                    elif v >= 75: bg = "#5C9E2E"
+                    elif v >= 66: bg = "#7FBC41"
+                    elif v >= 54: bg = "#A7D763"
+                    elif v >= 44: bg = "#F6D645"
+                    elif v >= 25: bg = "#D77A2E"
+                    else:         bg = "#C63733"
+                    fg = "#000" if v >= 44 else "#fff"
+                    return f"background-color:{bg};color:{fg}"
 
                 _fmt_dict = {"Similarity": "{:.1f}"}
                 for _cc in _ctx_avail:
