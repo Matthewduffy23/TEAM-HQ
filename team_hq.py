@@ -1720,9 +1720,10 @@ with st.expander("Radar settings", expanded=False):
                                       key=f"ts_comp_b_label_{sel_team}_{comp_team_b_sel}")
     comp_show_title   = st.checkbox("Show custom title", False, key="ts_comp_show_title")
     comp_custom_title = st.text_input("Custom title", "", key="ts_comp_custom_title")
-    comp_league_a_label = st.text_input("Edit Team A league", str(row_a["League"]) if row_a is not None and "League" in row_a.index else "",
+    comp_league_a_label = st.text_input("Edit Team A league", team_league,
                                         key=f"ts_comp_league_a_{sel_team}")
-    comp_league_b_label = st.text_input("Edit Team B league", str(row_b["League"]) if row_b is not None and "League" in row_b.index else "",
+    _comp_b_league = team_league_map.get(comp_team_b_sel, "")
+    comp_league_b_label = st.text_input("Edit Team B league", _comp_b_league,
                                         key=f"ts_comp_league_b_{sel_team}_{comp_team_b_sel}")
 
 # Theme colours (matching player radar exactly)
