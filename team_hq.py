@@ -2046,7 +2046,7 @@ else:
             boxstyle=f"round,pad=0.001,rounding_size={_nh2*0.25}",
             transform=_fig.transFigure,facecolor=_sc_bg,edgecolor="none"))
         _fig.text(_x_role+_nw2/2,_y_roles-_nh2*0.33,str(int(round(_rv))),
-                  fontsize=_r_fs,color=_sc_fg,va="center",ha="center",fontweight="900")
+                  fontsize=_r_fs,color="#FFFFFF",va="center",ha="center",fontweight="900")
         _x_role+=_nw2+0.020
 
     # ── chip rows: styles / strengths / weaknesses ──
