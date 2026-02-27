@@ -1731,7 +1731,7 @@ else:
     if _op_fp_pct is not None:
         _fp_rank_disp = int(round(_op_fp_rank)) if _op_use_fp else 1
         _OP_PERF.append(("£ Performance", float(_op_fp_pct),
-                          f"{int(round(_op_fp_pct))}th pct ({_fp_rank_disp})"))
+                          str(_fp_rank_disp)))
 
     # ════════════════════════════════════════════════════════════
     # FIGURE CONSTANTS — identical to player one-pager
@@ -1807,15 +1807,15 @@ else:
             x+=w+gap_x; per_row+=1
         return y-row_gap
 
-    # bar_panel — identical to player one-pager
-    def _bar_panel(fig, left, top, width, triples, title):
+    # bar_panel — identical to player one-pager; accepts optional forced_gutter
+    def _bar_panel(fig, left, top, width, triples, title, forced_gutter=None):
         n=len(triples)
         fig.canvas.draw()
         ax_h=max(1,n)*STEP_PX/fig.bbox.height
         bottom=top-ax_h
         labels=[t[0] for t in triples]
         max_lw=max((_tw(fig,s,fontsize=LABEL_FS,weight="bold") for s in labels),default=0)
-        gutter=max_lw+0.006
+        gutter=forced_gutter if forced_gutter is not None else (max_lw+0.006)
 
         ax_bg=fig.add_axes([left,bottom,width,ax_h])
         ax_bg.set_facecolor(PANEL_BG); ax_bg.set_xticks([]); ax_bg.set_yticks([])
@@ -1928,7 +1928,7 @@ else:
               color="#9CA3AF",fontsize=_nfs*0.58,
               fontweight="700",va="center",ha="left")
 
-    # ── meta line — tight under crest ──
+    # ── meta line — sits just below crest bottom ──
     _info_parts=[
         _op_league,
         f"Games: {_opv('Matches')}",
@@ -1939,13 +1939,20 @@ else:
         f"Avg Age: {_opv('Avg Age','{:.1f}')}",
     ]
     if _op_show_form and _op_formation: _info_parts.append(f"Formation: {_op_formation}")
-    # push info line up closer to crest bottom
-    _meta_y = _PY - 4/_FIG_H
-    _fig.text(0.055,_meta_y,"  •  ".join(_info_parts),
+    _meta_y = _PY - 8/_FIG_H   # 8px gap below crest
+    _meta_t = _fig.text(0.055,_meta_y,"  •  ".join(_info_parts),
               color="#FFFFFF",fontsize=13,ha="left",va="top")
+    # measure meta line height so score chips sit flush below it
+    _fig.canvas.draw()
+    try:    _mren=_fig.canvas.get_renderer()
+    except: _mren=getattr(_fig.canvas,"renderer",None)
+    if _mren:
+        _mh = _meta_t.get_window_extent(renderer=_mren).height/_fig.bbox.height
+    else:
+        _mh = 13*1.4/_FIG_H
 
     # ── ATT / DEF / POS score chips ──
-    _y_roles=_meta_y-20/_FIG_H
+    _y_roles=_meta_y - _mh - 6/_FIG_H
     _x_role=0.055; _pad_r=0.006; _pad_ry=0.003; _r_fs=10.6
     _r_h=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*2
     for _rlb,_rv in [("ATT",_op_att),("DEF",_op_def),("POS",_op_pos)]:
@@ -1969,25 +1976,34 @@ else:
         _x_role+=_nw2+0.020
 
     # ── chip rows: styles / strengths / weaknesses ──
-    _yc=_y_roles-_r_h-0.006
+    _yc=_y_roles-_r_h-4/_FIG_H   # tight gap below score badges
     _yc=_chip_row(_fig,_op_styles,    _yc,CHIP_B,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_strengths, _yc,CHIP_G,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_weaknesses,_yc,CHIP_R,fs=10.1,max_rows=2)
-    _yc-=0.009
+    _yc-=6/_FIG_H
 
     # ══════════════════════════════════════════════════════
     # BAR PANELS — 2-col layout
     # Left col:  Attacking (top) + Defensive (below)
     # Right col: Possession (top) + Performance (below)
+    # Shared gutter across right-col panels so bars align perfectly
     # ══════════════════════════════════════════════════════
     _L=0.050; _WL=0.41; _MG=0.040; _R=_L+_WL+_MG; _WR=0.41
     _TOP=_yc-0.020; _VG=0.050
 
-    _ab=_bar_panel(_fig,_L,_TOP,      _WL,_OP_ATT,"Attacking")
-    _   =_bar_panel(_fig,_L,_ab-_VG,  _WL,_OP_DEF,"Defensive")
-    _pb =_bar_panel(_fig,_R,_TOP,      _WR,_OP_POS,"Possession")
+    # compute shared gutter from all right-col labels combined
+    _right_labels = [t[0] for t in _OP_POS] + [t[0] for t in _OP_PERF]
+    _shared_gutter = (max((_tw(_fig,s,fontsize=LABEL_FS,weight="bold")
+                           for s in _right_labels), default=0) + 0.006
+                      if _right_labels else None)
+
+    _ab=_bar_panel(_fig,_L,_TOP,       _WL,_OP_ATT,"Attacking")
+    _   =_bar_panel(_fig,_L,_ab-_VG,   _WL,_OP_DEF,"Defensive")
+    _pb =_bar_panel(_fig,_R,_TOP,       _WR,_OP_POS,"Possession",
+                    forced_gutter=_shared_gutter)
     if _OP_PERF:
-        _ = _bar_panel(_fig,_R,_pb-_VG,_WR,_OP_PERF,"Performance")
+        _ = _bar_panel(_fig,_R,_pb-_VG, _WR,_OP_PERF,"Performance",
+                       forced_gutter=_shared_gutter)
 
     # ── render ──
     st.pyplot(_fig,use_container_width=True)
