@@ -728,7 +728,6 @@ def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines,
     footer_lines = [
         f"Ranked by: {rank_label}.",
         "Scores computed within the selected pool (per-league percentile ranks).",
-        "TEAM-HQ | Wyscout data",
     ]
 
     # ── 1920×1080 banner ──
@@ -778,7 +777,7 @@ def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines,
         buf.seek(0); return buf.getvalue()
 
     # ── Standard ──
-    N=len(df_show); ROW_H=0.82; HEADER_H=1.70; FOOT_H=0.70
+    N=len(df_show); ROW_H=0.82; HEADER_H=1.70; FOOT_H=0.55
     TOTAL_H=HEADER_H+N*ROW_H+FOOT_H
     fig=plt.figure(figsize=(8.3,TOTAL_H),dpi=220)
     ax=fig.add_axes([0,0,1,1]); ax.set_xlim(0,1.0); ax.set_ylim(0,TOTAL_H); ax.axis("off")
