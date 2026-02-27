@@ -1559,17 +1559,47 @@ else:
     _op_pool   = df[df["League"] == _op_league]
 
     # ── UI controls ──
-    _oc1, _oc2, _oc3 = st.columns(3)
-    _op_use_fp    = _oc1.toggle("Show £ Performance", False, key="op_use_fp")
-    _op_show_form = _oc2.toggle("Show Formation",     False, key="op_show_form")
-    _op_fp_pct    = None
+    _oc1, _oc2, _oc3, _oc4 = st.columns(4)
+
+    _op_use_fp      = _oc1.toggle("Show £ Performance",   False, key="op_use_fp")
+    _op_show_form   = _oc2.toggle("Show Formation",        False, key="op_show_form")
+    _op_show_coach  = _oc3.toggle("Show Coach Name",       False, key="op_show_coach")
+    _op_use_leagpos = _oc4.toggle("Use League Position Badge", False, key="op_use_leagpos")
+    _op_show_style  = _oc1.toggle("Show Style Tag",        True,  key="op_show_style")
+    _op_hide_badge  = False  # derived from use_leagpos
+
+    _op_fp_pct   = None
+    _op_coach    = ""
+    _op_leagpos  = 1
+    _op_leagn    = max(2, len(_op_pool))
+    _op_custom_league = _op_league
+    _op_custom_style  = ""
+
     if _op_use_fp:
         _op_fp_rank = _oc1.number_input("£ Perf rank", 1, 200, 1,  key="op_fp_rank")
-        _op_fp_n    = _oc2.number_input("Out of", 2, 200, max(2, len(_op_pool)), key="op_fp_n")
+        _op_fp_n    = _oc2.number_input("Out of", 2, 200, _op_leagn, key="op_fp_n")
         _op_fp_pct  = float(np.clip((_op_fp_n - _op_fp_rank) / (_op_fp_n - 1) * 100, 0, 100))
-    _op_formation = ""
+
     if _op_show_form:
         _op_formation = _oc3.text_input("Formation", "4-3-3", key="op_formation")
+    else:
+        _op_formation = ""
+
+    if _op_show_coach:
+        _op_coach = _oc4.text_input("Coach Name", "", key="op_coach")
+
+    if _op_use_leagpos:
+        _lp_col1, _lp_col2 = st.columns(2)
+        _op_leagpos = _lp_col1.number_input("League Position", 1, 200, 1, key="op_leagpos")
+        _op_leagn   = _lp_col2.number_input("Total Teams", 2, 200, _op_leagn, key="op_leagn")
+
+    # Custom league name override
+    _op_custom_league = st.text_input("Override League Name (optional)", "", key="op_custom_league")
+    _display_league   = _op_custom_league.strip() if _op_custom_league.strip() else _op_league
+
+    # Style tag override
+    if _op_show_style:
+        _op_custom_style = st.text_input("Override Style Tag (optional)", "", key="op_custom_style")
 
     # ── pct helper ──
     def _op_pct(col, invert=False):
@@ -1599,6 +1629,9 @@ else:
     elif 35 <= _p_poss < 70:                                                         _op_style = "Mixed"
     elif _p_aer >= 70:                                                               _op_style = "Low Block"
     else:                                                                            _op_style = "No Defined Style"
+
+    # Apply custom style override if provided
+    _display_style = _op_custom_style.strip() if (_op_show_style and _op_custom_style.strip()) else _op_style
 
     # ── Exact STYLE_TEAM as specified ──
     _OP_STYLE_TEAM = {
@@ -1696,10 +1729,10 @@ else:
         ("Prog Runs",        "Progressive Runs p90"),
     ])
 
-    # ── Performance panel: Points, xPoints, £ Perf ──
-    _op_matches = float(_op_r.get("Matches", np.nan)) if pd.notna(_op_r.get("Matches")) else np.nan
-    _op_pts_raw = float(_op_r.get("Points",  np.nan)) if pd.notna(_op_r.get("Points"))  else np.nan
-    _op_xpts_raw= float(_op_r.get("Expected Points", np.nan)) if pd.notna(_op_r.get("Expected Points")) else np.nan
+    # ── Performance panel ──
+    _op_matches  = float(_op_r.get("Matches", np.nan)) if pd.notna(_op_r.get("Matches")) else np.nan
+    _op_pts_raw  = float(_op_r.get("Points",  np.nan)) if pd.notna(_op_r.get("Points"))  else np.nan
+    _op_xpts_raw = float(_op_r.get("Expected Points", np.nan)) if pd.notna(_op_r.get("Expected Points")) else np.nan
 
     def _per_game(raw, m):
         return raw/m if (pd.notna(raw) and pd.notna(m) and m>0) else np.nan
@@ -1717,35 +1750,57 @@ else:
         if pd.isna(val) or series.empty: return 0.0
         return float(np.clip((series<val).mean()*100+(series==val).mean()*50, 0, 100))
 
-    _ppg_s   = _pool_rate_pct("Points",          "Matches")
-    _xppg_s  = _pool_rate_pct("Expected Points",  "Matches")
-    _ppg_pct = _rate_pct(_op_ppg,  _ppg_s)
-    _xppg_pct= _rate_pct(_op_xppg, _xppg_s)
+    _ppg_s    = _pool_rate_pct("Points",          "Matches")
+    _xppg_s   = _pool_rate_pct("Expected Points",  "Matches")
+    _ppg_pct  = _rate_pct(_op_ppg,  _ppg_s)
+    _xppg_pct = _rate_pct(_op_xppg, _xppg_s)
 
     _OP_PERF = []
     if pd.notna(_op_ppg):
         _OP_PERF.append(("PPG",   _ppg_pct,  f"{_op_ppg:.2f}"))
     if pd.notna(_op_xppg):
         _OP_PERF.append(("xPPG",  _xppg_pct, f"{_op_xppg:.2f}"))
-    # xGD per 90 = xG p90 - xGA p90
-    _xg_p90_v  = float(_op_r.get("xG p90",  np.nan)) if pd.notna(_op_r.get("xG p90"))  else np.nan
-    _xga_p90_v = float(_op_r.get("xG Against p90", np.nan)) if pd.notna(_op_r.get("xG Against p90")) else np.nan
-    if pd.notna(_xg_p90_v) and pd.notna(_xga_p90_v):
-        _xgd_v = _xg_p90_v - _xga_p90_v
-        # percentile: compute xGD for all pool teams
-        _xg_s  = pd.to_numeric(_op_pool.get("xG p90",  pd.Series(dtype=float)), errors="coerce")
-        _xga_s = pd.to_numeric(_op_pool.get("xG Against p90", pd.Series(dtype=float)), errors="coerce")
-        _xgd_s = (_xg_s - _xga_s).dropna()
+
+    # ── xGD (not per 90) ──
+    _xg_v  = float(_op_r.get("xG",           np.nan)) if pd.notna(_op_r.get("xG"))           else np.nan
+    _xga_v = float(_op_r.get("xG Against",   np.nan)) if pd.notna(_op_r.get("xG Against"))   else np.nan
+    # Fallback: try p90 columns and scale by matches
+    if pd.isna(_xg_v) and pd.notna(_op_r.get("xG p90")) and pd.notna(_op_matches):
+        _xg_v = float(_op_r.get("xG p90")) * _op_matches
+    if pd.isna(_xga_v) and pd.notna(_op_r.get("xG Against p90")) and pd.notna(_op_matches):
+        _xga_v = float(_op_r.get("xG Against p90")) * _op_matches
+
+    if pd.notna(_xg_v) and pd.notna(_xga_v):
+        _xgd_v = _xg_v - _xga_v
+        # Compute pool xGD totals for percentile
+        _xg_s_tot  = pd.to_numeric(_op_pool.get("xG",         pd.Series(dtype=float)), errors="coerce")
+        _xga_s_tot = pd.to_numeric(_op_pool.get("xG Against", pd.Series(dtype=float)), errors="coerce")
+        if _xg_s_tot.empty or _xga_s_tot.empty:
+            # fallback to p90 * matches
+            _xg_s_p  = pd.to_numeric(_op_pool.get("xG p90",         pd.Series(dtype=float)), errors="coerce")
+            _xga_s_p = pd.to_numeric(_op_pool.get("xG Against p90", pd.Series(dtype=float)), errors="coerce")
+            _m_s     = pd.to_numeric(_op_pool.get("Matches",         pd.Series(dtype=float)), errors="coerce").replace(0, np.nan)
+            _xg_s_tot  = (_xg_s_p  * _m_s).dropna()
+            _xga_s_tot = (_xga_s_p * _m_s).dropna()
+        _xgd_s   = (_xg_s_tot - _xga_s_tot).dropna()
         _xgd_pct = float(np.clip((_xgd_s < _xgd_v).mean()*100 + (_xgd_s == _xgd_v).mean()*50, 0, 100)) if not _xgd_s.empty else 0.0
-        _xgd_str = f"{_xgd_v:+.2f}" if _xgd_v != 0 else "0.00"
-        _OP_PERF.append(("xGD p90", _xgd_pct, _xgd_str))
+        _xgd_str = f"{_xgd_v:+.1f}" if _xgd_v != 0 else "0.0"
+        _OP_PERF.append(("xGD", _xgd_pct, _xgd_str))   # ← label is "xGD", not "xGD p90"
+
     if _op_fp_pct is not None:
         _fp_rank_disp = int(round(_op_fp_rank)) if _op_use_fp else 1
-        _OP_PERF.append(("£ Performance", float(_op_fp_pct),
-                          str(_fp_rank_disp)))
+        _OP_PERF.append(("£ Performance", float(_op_fp_pct), str(_fp_rank_disp)))
+
+    # ── Performance section labels: full words ──
+    # Attack / Defence / Possession as full-word triples for the panel
+    _OP_PERF_SCORES = [
+        ("Attack",     _op_pct("xG p90") * 0.5 + _op_pct("Goals p90") * 0.5,    str(int(round(_op_att)))),
+        ("Defence",    _op_pct("xG Against p90", invert=True),                   str(int(round(_op_def)))),
+        ("Possession", _op_pct("Possession %"),                                   str(int(round(_op_pos)))),
+    ]
 
     # ════════════════════════════════════════════════════════════
-    # FIGURE CONSTANTS — identical to player one-pager
+    # FIGURE CONSTANTS
     # ════════════════════════════════════════════════════════════
     PAGE_BG   = "#0a0f1c"
     PANEL_BG  = "#11161C"
@@ -1776,6 +1831,18 @@ else:
         if v>=25: return "#D77A2E","#fff"
         return "#C63733","#fff"
 
+    # League position colour scale: 1st = deep green, last = deep red
+    def _lp_rc(pos, total):
+        """Return (bg, fg) for a league position badge."""
+        if total <= 1: return "#2E6114", "#fff"
+        frac = (pos - 1) / (total - 1)   # 0 = 1st, 1 = last
+        if frac <= 0.10: return "#2E6114", "#fff"
+        if frac <= 0.25: return "#5C9E2E", "#fff"
+        if frac <= 0.45: return "#7FBC41", "#000"
+        if frac <= 0.55: return "#F6D645", "#000"
+        if frac <= 0.75: return "#D77A2E", "#fff"
+        return "#C63733", "#fff"
+
     def _tw(fig, s, *, fontsize=8, weight="normal"):
         t=fig.text(0,0,s,fontsize=fontsize,fontweight=weight,
                    transform=fig.transFigure,alpha=0)
@@ -1796,7 +1863,6 @@ else:
         h=t.get_window_extent(renderer=r).height; t.remove()
         return h/fig.bbox.height
 
-    # chip_row — identical to player one-pager
     def _chip_row(fig, items, y, bg, *, fs=10.1, weight="900",
                   max_rows=2, gap_x=0.006, max_per_row=99):
         if not items: return y
@@ -1818,7 +1884,6 @@ else:
             x+=w+gap_x; per_row+=1
         return y-row_gap
 
-    # bar_panel — identical to player one-pager; accepts optional forced_gutter
     def _bar_panel(fig, left, top, width, triples, title, forced_gutter=None):
         n=len(triples)
         fig.canvas.draw()
@@ -1867,7 +1932,6 @@ else:
 
     # ── figure height ──
     _n_chip_r=sum([bool(_op_styles),bool(_op_strengths),bool(_op_weaknesses)])
-    # left col: ATT+DEF; right col: POS+PERF stacked
     _left_rows=len(_OP_ATT)+len(_OP_DEF)+3
     _right_rows=len(_OP_POS)+len(_OP_PERF)+4
     _panel_rows=max(_left_rows,_right_rows)
@@ -1881,18 +1945,14 @@ else:
     # ══════════════════════════════════════════════════════
     _PW=0.10; _PH=100/_FIG_H; _PX=0.050; _PY=1.0-_PH-14/_FIG_H
 
-    # crest (left)
     _op_badge=get_team_badge(_op_team)
     if _op_badge is not None:
         _axcr=_fig.add_axes([_PX,_PY,_PW,_PH])
         _axcr.imshow(_op_badge); _axcr.axis("off")
 
-    # team name — top of crest area
     _NX=_PX+_PW+0.010; _nfs=28
-    # vertically centre name+badge together in the crest height
-    _crest_mid_y = _PY + _PH/2   # midpoint of crest box in figure fraction
+    _crest_mid_y = _PY + _PH/2
 
-    # Draw name, measure it, then reposition so it's vertically centred with badge
     _nt=_fig.text(_NX, _crest_mid_y, _op_team.upper(),
                   color="#FFFFFF", fontsize=_nfs, fontweight="900",
                   va="center", ha="left")
@@ -1906,22 +1966,30 @@ else:
     else:
         _nw=len(_op_team)*_nfs*0.60/_FIG_W; _nh=_nfs*1.4/_FIG_H
 
-    # name is already va="center" at _crest_mid_y — this IS the vertical centre
     _NYC = _crest_mid_y
 
-    # OVR badge — vertically centred with name
+    # ── OVR badge OR League Position badge ──
     _BSCALE=1.28; _bh=_nh*_BSCALE; _bw=_bh
     _bx=_NX+_nw+0.012; _by=_NYC-_bh/2
-    _ovr_bg,_ovr_fg=_rc(_op_ovr)
+
+    if _op_use_leagpos:
+        # League position badge — colour by position
+        _badge_bg, _badge_fg = _lp_rc(_op_leagpos, _op_leagn)
+        _badge_label = str(int(_op_leagpos))
+    else:
+        # Standard OVR badge
+        _badge_bg, _badge_fg = _rc(_op_ovr)
+        _badge_label = str(int(round(_op_ovr)))
+
     _fig.patches.append(mpatches.FancyBboxPatch(
         (_bx,_by),_bw,_bh,
         boxstyle="round,pad=0.001,rounding_size=0.012",
-        transform=_fig.transFigure,facecolor=_ovr_bg,edgecolor="none"))
-    _fig.text(_bx+_bw/2,_NYC,f"{int(round(_op_ovr))}",
-              fontsize=18.6*_BSCALE,color=_ovr_fg,
+        transform=_fig.transFigure,facecolor=_badge_bg,edgecolor="none"))
+    _fig.text(_bx+_bw/2,_NYC,_badge_label,
+              fontsize=18.6*_BSCALE,color=_badge_fg,
               va="center",ha="center",fontweight="900")
 
-    # league logo — right of OVR badge, centred with it
+    # ── league logo ──
     _CW=0.048; _CH=48/_FIG_H
     _CX=_bx+_bw+0.016; _CY=_NYC-_CH/2
     _crest_drawn=False
@@ -1933,15 +2001,16 @@ else:
             _axlg.imshow(_lg_img); _axlg.axis("off")
             _crest_drawn=True
 
-    # style label — grey text right of league logo, centred with name
-    _lx=(_CX+_CW+0.014) if _crest_drawn else (_bx+_bw+0.014)
-    _fig.text(min(_lx,0.975),_NYC,_op_style,
-              color="#9CA3AF",fontsize=_nfs*0.58,
-              fontweight="700",va="center",ha="left")
+    # ── style tag (toggle) ──
+    if _op_show_style:
+        _lx=(_CX+_CW+0.014) if _crest_drawn else (_bx+_bw+0.014)
+        _fig.text(min(_lx,0.975),_NYC,_display_style,
+                  color="#9CA3AF",fontsize=_nfs*0.58,
+                  fontweight="700",va="center",ha="left")
 
-    # ── meta line — sits just below crest bottom ──
+    # ── meta line — pipe-separated, with optional coach ──
     _info_parts=[
-        _op_league,
+        _display_league,
         f"Games: {_opv('Matches')}",
         f"GF: {_opv('Goals For')}",
         f"GA: {_opv('Goals Against')}",
@@ -1949,11 +2018,16 @@ else:
         f"xPts: {_opv('Expected Points','{:.1f}')} ({_xpts_str})",
         f"Avg Age: {_opv('Avg Age','{:.1f}')}",
     ]
-    if _op_show_form and _op_formation: _info_parts.append(f"Formation: {_op_formation}")
-    _meta_y = _PY - 12/_FIG_H  # 12px gap below crest
-    _meta_t = _fig.text(0.055,_meta_y,"  •  ".join(_info_parts),
-              color="#FFFFFF",fontsize=13,ha="left",va="top")
-    # measure meta line height so score chips sit flush below it
+    if _op_show_form and _op_formation:
+        _info_parts.append(f"Formation: {_op_formation}")
+    if _op_show_coach and _op_coach.strip():
+        _info_parts.append(f"Coach: {_op_coach.strip()}")
+
+    _meta_y = _PY - 12/_FIG_H
+    _meta_t = _fig.text(0.055, _meta_y,
+                        "  |  ".join(_info_parts),   # ← pipe separator
+                        color="#FFFFFF", fontsize=13, ha="left", va="top")
+
     _fig.canvas.draw()
     try:    _mren=_fig.canvas.get_renderer()
     except: _mren=getattr(_fig.canvas,"renderer",None)
@@ -1962,11 +2036,13 @@ else:
     else:
         _mh = 13*1.4/_FIG_H
 
-    # ── ATT / DEF / POS score chips ──
+    # ── ATT / DEF / POS score chips (full labels) ──
     _y_roles=_meta_y - _mh - 18/_FIG_H
     _x_role=0.055; _pad_r=0.006; _pad_ry=0.003; _r_fs=10.6
     _r_h=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*2
-    for _rlb,_rv in [("ATT",_op_att),("DEF",_op_def),("POS",_op_pos)]:
+
+    # Full-word labels
+    for _rlb, _rv in [("Attack", _op_att), ("Defence", _op_def), ("Possession", _op_pos)]:
         _lw=_tw(_fig,_rlb,fontsize=_r_fs,weight="900")+_pad_r*2
         _nw2=_tw(_fig,str(int(round(_rv))),fontsize=_r_fs,weight="900")+_pad_r*1.8
         _nh2=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*1.8
@@ -1987,7 +2063,7 @@ else:
         _x_role+=_nw2+0.020
 
     # ── chip rows: styles / strengths / weaknesses ──
-    _yc=_y_roles-_r_h-16/_FIG_H  # gap below score badges
+    _yc=_y_roles-_r_h-16/_FIG_H
     _yc=_chip_row(_fig,_op_styles,    _yc,CHIP_B,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_strengths, _yc,CHIP_G,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_weaknesses,_yc,CHIP_R,fs=10.1,max_rows=2)
@@ -1995,14 +2071,10 @@ else:
 
     # ══════════════════════════════════════════════════════
     # BAR PANELS — 2-col layout
-    # Left col:  Attacking (top) + Defensive (below)
-    # Right col: Possession (top) + Performance (below)
-    # Shared gutter across right-col panels so bars align perfectly
     # ══════════════════════════════════════════════════════
     _L=0.050; _WL=0.41; _MG=0.040; _R=_L+_WL+_MG; _WR=0.41
     _TOP=_yc-0.020; _VG=0.050
 
-    # compute shared gutter from all right-col labels combined
     _right_labels = [t[0] for t in _OP_POS] + [t[0] for t in _OP_PERF]
     _shared_gutter = (max((_tw(_fig,s,fontsize=LABEL_FS,weight="bold")
                            for s in _right_labels), default=0) + 0.006
