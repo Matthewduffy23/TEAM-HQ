@@ -615,6 +615,211 @@ def avail_pairs(pairs, row_or_df):
 st.markdown("---")
 
 # ══════════════════════════════════════════════════════
+# SECTION 0 – TEAM RANKING IMAGE
+# ══════════════════════════════════════════════════════
+st.subheader("🏆 Team Ranking Image")
+
+# ── Composite score: Pressing = PPDA percentile ──
+df["PRS"] = df.apply(lambda r: r.get(score_col("PPDA"), np.nan), axis=1)
+
+_TRI_SCORE_COLS = {
+    "Overall":    "OVR",
+    "Attack":     "ATT",
+    "Defense":    "DEF",
+    "Possession": "POS",
+    "Pressing":   "PRS",
+}
+_TRI_RAW_COLS = [c for c in NUMERIC_COLS if c in df.columns]
+_TRI_ALL_LABELS = list(_TRI_SCORE_COLS.keys()) + [mlabel(c) for c in _TRI_RAW_COLS]
+_TRI_RAW_LABEL_TO_COL = {mlabel(c): c for c in _TRI_RAW_COLS}
+
+def _tri_format(val, col_name):
+    """1 dp; append % if metric name contains '%'"""
+    try:
+        v = float(val)
+        if np.isnan(v): return "—"
+    except: return "—"
+    suffix = "%" if "%" in str(col_name) else ""
+    return f"{v:.1f}{suffix}"
+
+with st.expander("Ranking Image settings", expanded=True):
+    _tc1, _tc2 = st.columns(2)
+    tri_rank_mode = _tc1.radio("Rank by", ["Score", "Raw metric"], horizontal=True, key="tri_rank_mode")
+    tri_theme     = _tc2.radio("Theme",   ["Light", "Dark"],       horizontal=True, key="tri_theme")
+
+    if tri_rank_mode == "Score":
+        tri_score_choice = st.selectbox("Score", list(_TRI_SCORE_COLS.keys()), key="tri_score_choice")
+        tri_rank_col     = _TRI_SCORE_COLS[tri_score_choice]
+        tri_rank_label   = tri_score_choice
+        tri_is_raw       = False
+    else:
+        tri_raw_label    = st.selectbox("Raw metric", [mlabel(c) for c in _TRI_RAW_COLS],
+                                        key="tri_raw_label")
+        tri_rank_col     = _TRI_RAW_LABEL_TO_COL.get(tri_raw_label, _TRI_RAW_COLS[0])
+        tri_rank_label   = tri_raw_label
+        tri_is_raw       = True
+
+    _lc1, _lc2, _lc3 = st.columns(3)
+    tri_league_filter = _lc1.selectbox("Filter by league", ["All"] + sorted(df["League"].dropna().unique()),
+                                        key="tri_league_filter")
+    tri_top_n  = _lc2.number_input("Top N", 3, 20, 10, key="tri_top_n")
+    tri_export = _lc3.selectbox("Export format", ["Standard (auto)", "1920×1080 (banner)"], key="tri_export")
+
+    tri_t1 = st.text_input("Title line 1", "TOP TEAMS",            key="tri_t1")
+    tri_t2 = st.text_input("Title line 2", tri_rank_label.upper(), key="tri_t2")
+    tri_t3 = st.text_input("Title line 3", "TEAM-HQ  |  Wyscout",  key="tri_t3")
+
+# ── Build display dataframe ──
+_tri_df = df.copy()
+if tri_league_filter != "All":
+    _tri_df = _tri_df[_tri_df["League"] == tri_league_filter]
+
+if tri_is_raw:
+    _tri_asc = tri_rank_col in INVERT_METRICS
+    _tri_df["_tri_val"] = pd.to_numeric(_tri_df[tri_rank_col], errors="coerce")
+else:
+    _tri_asc = False
+    _tri_df["_tri_val"] = pd.to_numeric(_tri_df[tri_rank_col], errors="coerce")
+
+_tri_df = _tri_df.dropna(subset=["_tri_val"]).sort_values("_tri_val", ascending=_tri_asc).head(int(tri_top_n))
+
+# ── Render image ──
+def _tri_make_image(df_show, rank_col, rank_label, is_raw, title_lines, theme, export_mode, top_n):
+    if df_show.empty:
+        return b""
+
+    # Theme palette — matches existing dark/light style
+    if theme == "Dark":
+        BG="#0a0f1c"; ROW_A="#0f1628"; ROW_B="#0b1222"
+        TXT="#ffffff"; SUB="#b8c0cf"; FOOT="#9aa6bd"; DIV="#23304a"
+        BAR_BG="#1a2540"; BAR_FG="#6b7cff"
+        RANK_BG="#111a2e"; RANK_EDGE="#2b3a5a"
+    else:
+        BG="#ffffff"; ROW_A="#f7f7f7"; ROW_B="#ffffff"
+        TXT="#111111"; SUB="#777777"; FOOT="#9b9b9b"; DIV="#e2e2e2"
+        BAR_BG="#e1e1e1"; BAR_FG="#bfbfbf"
+        RANK_BG="#f3f3f3"; RANK_EDGE="#c0c0c0"
+
+    scores = pd.to_numeric(df_show["_tri_val"], errors="coerce")
+    max_score = float(scores.max()) if scores.notna().any() else 1.0
+    if max_score == 0: max_score = 1.0
+
+    footer_lines = [
+        f"Ranked by: {rank_label}.",
+        "Scores computed within the selected pool (per-league percentile ranks).",
+        "TEAM-HQ | Wyscout data",
+    ]
+
+    # ── 1920×1080 banner ──
+    if export_mode == "1920×1080 (banner)":
+        DPI=100; fig=plt.figure(figsize=(19.2, 10.8), dpi=DPI)
+        ax=fig.add_axes([0,0,1,1]); ax.set_xlim(0,1); ax.set_ylim(0,1); ax.axis("off")
+        ax.add_patch(Rectangle((0,0),1,1,color=BG,zorder=0))
+        LEFT,RIGHT=0.045,0.955
+
+        ax.text(LEFT,0.972,title_lines[0].upper(),fontsize=48,fontweight="bold",color=TXT,ha="left",va="top")
+        ax.text(LEFT,0.912,title_lines[1].upper(),fontsize=34,fontweight="bold",color=TXT,ha="left",va="top")
+        ax.text(LEFT,0.870,title_lines[2],        fontsize=20,color=SUB,ha="left",va="top")
+        ax.plot([LEFT,RIGHT],[0.835,0.835],color=DIV,lw=2.2)
+        ax.plot([LEFT,RIGHT],[0.040,0.040],color=DIV,lw=2.2)
+        for i,line in enumerate(footer_lines):
+            ax.text(LEFT,0.022-i*0.024,line,fontsize=13,color=FOOT,ha="left",va="top",zorder=10)
+
+        ROW_TOP=0.813; ROW_BOT=0.050
+        row_gap=(ROW_TOP-ROW_BOT)/float(top_n); row_h=row_gap*0.92
+        RANK_X=LEFT+0.024; CREST_X=LEFT+0.105; NAME_X=LEFT+0.175
+        BAR_L=LEFT+0.62; BAR_R=RIGHT-0.14; BAR_W=BAR_R-BAR_L; BAR_H=row_h*0.26; VAL_X=RIGHT-0.025
+
+        for i,(_, row) in enumerate(df_show.iterrows()):
+            y=ROW_TOP-(i+0.5)*row_gap
+            ax.add_patch(Rectangle((LEFT,y-row_h/2),RIGHT-LEFT,row_h,
+                                   color=(ROW_A if i%2==0 else ROW_B),zorder=1))
+            ax.scatter([RANK_X],[y],s=1320,facecolor=RANK_BG,edgecolor=RANK_EDGE,linewidths=2.2,zorder=4)
+            ax.text(RANK_X,y,str(i+1),fontsize=16,fontweight="bold",color=TXT,ha="center",va="center",zorder=5)
+
+            badge=get_team_badge(str(row.get("Team","")))
+            if badge is not None:
+                h,w=badge.shape[0],badge.shape[1]; z=52.0/max(h,w)
+                ax.add_artist(AnnotationBbox(OffsetImage(badge,zoom=z),(CREST_X,y),frameon=False,zorder=5))
+
+            ax.text(NAME_X,y+row_h*0.18,str(row.get("Team","")).upper(),
+                    fontsize=28,fontweight="bold",color=TXT,ha="left",va="center",zorder=6)
+            ax.text(NAME_X,y-row_h*0.22,str(row.get("League","")),
+                    fontsize=19,color=SUB,ha="left",va="center",zorder=6)
+
+            frac=max(0.0,min(1.0,float(row["_tri_val"])/max_score))
+            ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W,BAR_H,color=BAR_BG,zorder=2))
+            ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W*frac,BAR_H,color=BAR_FG,zorder=3))
+            ax.text(VAL_X,y,_tri_format(row["_tri_val"],rank_label),
+                    fontsize=29,fontweight="bold",color=TXT,ha="right",va="center",zorder=6)
+
+        buf=io.BytesIO(); fig.savefig(buf,format="png",dpi=DPI,facecolor=BG); plt.close(fig)
+        buf.seek(0); return buf.getvalue()
+
+    # ── Standard ──
+    N=len(df_show); ROW_H=0.82; HEADER_H=1.70; FOOT_H=0.70
+    TOTAL_H=HEADER_H+N*ROW_H+FOOT_H
+    fig=plt.figure(figsize=(8.3,TOTAL_H),dpi=220)
+    ax=fig.add_axes([0,0,1,1]); ax.set_xlim(0,1.0); ax.set_ylim(0,TOTAL_H); ax.axis("off")
+    ax.add_patch(Rectangle((0,0),1.0,TOTAL_H,color=BG,zorder=0))
+
+    title_y=TOTAL_H-0.25
+    ax.text(0.04,title_y,      title_lines[0].upper(),fontsize=19,fontweight="bold",color=TXT,ha="left",va="top")
+    ax.text(0.04,title_y-0.34, title_lines[1].upper(),fontsize=14,fontweight="bold",color=TXT,ha="left",va="top")
+    ax.text(0.04,title_y-0.62, title_lines[2],         fontsize=11,color=SUB,ha="left",va="top")
+
+    base_y=TOTAL_H-HEADER_H
+    ax.plot([0.04,0.96],[base_y+ROW_H/2+0.02]*2,color=DIV,lw=1.1,zorder=2)
+
+    LEFT,RIGHT=0.04,0.96
+    BAR_L,BAR_R=0.66,0.82; BAR_W=BAR_R-BAR_L; BAR_H=0.14; VAL_X=0.94; crest_x=0.14
+
+    for i,(_, row) in enumerate(df_show.iterrows()):
+        y=base_y-i*ROW_H
+        ax.add_patch(Rectangle((LEFT,y-ROW_H/2),RIGHT-LEFT,ROW_H,
+                               color=(ROW_A if i%2==0 else ROW_B),zorder=1))
+        ax.scatter([0.07],[y],s=520,facecolor=RANK_BG,edgecolor=RANK_EDGE,linewidths=1.2,zorder=4)
+        ax.text(0.07,y,str(i+1),fontsize=10,fontweight="bold",color=TXT,ha="center",va="center",zorder=5)
+
+        badge=get_team_badge(str(row.get("Team","")))
+        if badge is not None:
+            h,w=badge.shape[0],badge.shape[1]; z=40.0/max(h,w)
+            ax.add_artist(AnnotationBbox(OffsetImage(badge,zoom=z),(crest_x,y),frameon=False,zorder=5))
+
+        ax.text(0.21,y+0.12,str(row.get("Team","")).upper(),
+                fontsize=16,fontweight="bold",color=TXT,ha="left",va="center",zorder=5)
+        ax.text(0.21,y-0.10,str(row.get("League","")),
+                fontsize=12,color=SUB,ha="left",va="center",zorder=5)
+
+        frac=max(0.0,min(1.0,float(row["_tri_val"])/max_score))
+        ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W,BAR_H,color=BAR_BG,zorder=2))
+        ax.add_patch(Rectangle((BAR_L,y-BAR_H/2),BAR_W*frac,BAR_H,color=BAR_FG,zorder=3))
+        ax.text(VAL_X,y,_tri_format(row["_tri_val"],rank_label),
+                fontsize=16,fontweight="bold",color=TXT,ha="right",va="center",zorder=6)
+
+    ax.plot([LEFT,RIGHT],[0.82]*2,color=DIV,lw=0.9,zorder=2)
+    for j,line in enumerate(footer_lines):
+        ax.text(LEFT,0.62-j*0.18,line,fontsize=9.5,color=FOOT,ha="left",va="top",zorder=4)
+
+    buf=io.BytesIO(); fig.savefig(buf,format="png",dpi=220,facecolor=BG); plt.close(fig)
+    buf.seek(0); return buf.getvalue()
+
+_tri_img = _tri_make_image(
+    _tri_df, "OVR" if not tri_is_raw else tri_rank_col,
+    tri_rank_label, tri_is_raw,
+    [tri_t1, tri_t2, tri_t3],
+    tri_theme, tri_export, int(tri_top_n)
+)
+if _tri_img:
+    st.image(_tri_img, use_column_width=True)
+    st.download_button("⬇️ Download Ranking Image", _tri_img,
+                       f"team_ranking_{tri_rank_label.replace(' ','_')}.png", "image/png")
+else:
+    st.info("No data to display — check filters.")
+
+st.markdown("---")
+
+# ══════════════════════════════════════════════════════
 # SECTION 1 – LEAGUE TABLE
 # ══════════════════════════════════════════════════════
 st.subheader("📊 League Table")
