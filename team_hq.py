@@ -1724,16 +1724,14 @@ else:
     _xppg_pct= _rate_pct(_op_xppg, _xppg_s)
 
     _OP_PERF = []
-    if pd.notna(_op_pts_raw):
-        _OP_PERF.append(("Points",     _op_pct("Points",  False), _opval("Points")))
-    if pd.notna(_op_xpts_raw):
-        _OP_PERF.append(("xPoints",    _op_pct("Expected Points", False), _opval("Expected Points")))
     if pd.notna(_op_ppg):
-        _OP_PERF.append(("Pts/Game",   _ppg_pct,  f"{_op_ppg:.2f}"))
+        _OP_PERF.append(("PPG",   _ppg_pct,  f"{_op_ppg:.2f}"))
     if pd.notna(_op_xppg):
-        _OP_PERF.append(("xPts/Game",  _xppg_pct, f"{_op_xppg:.2f}"))
+        _OP_PERF.append(("xPPG",  _xppg_pct, f"{_op_xppg:.2f}"))
     if _op_fp_pct is not None:
-        _OP_PERF.append(("£ Perf",     float(_op_fp_pct), f"{int(round(_op_fp_pct))}th pct"))
+        _fp_rank_disp = int(round(_op_fp_rank)) if _op_use_fp else 1
+        _OP_PERF.append(("£ Performance", float(_op_fp_pct),
+                          f"{int(round(_op_fp_pct))}th pct ({_fp_rank_disp})"))
 
     # ════════════════════════════════════════════════════════════
     # FIGURE CONSTANTS — identical to player one-pager
@@ -1858,9 +1856,9 @@ else:
 
     # ── figure height ──
     _n_chip_r=sum([bool(_op_styles),bool(_op_strengths),bool(_op_weaknesses)])
-    # left col: ATT+DEF+PERF stacked; right col: POS alone
-    _left_rows=len(_OP_ATT)+len(_OP_DEF)+len(_OP_PERF)+6
-    _right_rows=len(_OP_POS)+2
+    # left col: ATT+DEF; right col: POS+PERF stacked
+    _left_rows=len(_OP_ATT)+len(_OP_DEF)+3
+    _right_rows=len(_OP_POS)+len(_OP_PERF)+4
     _panel_rows=max(_left_rows,_right_rows)
     _FIG_H=max(1200, 230+_n_chip_r*40+_panel_rows*STEP_PX+200)
     _FIG_W=1500
@@ -1979,17 +1977,17 @@ else:
 
     # ══════════════════════════════════════════════════════
     # BAR PANELS — 2-col layout
-    # Left col:  Attacking (top) + Defensive (middle) + Performance (bottom)
-    # Right col: Possession (full height)
+    # Left col:  Attacking (top) + Defensive (below)
+    # Right col: Possession (top) + Performance (below)
     # ══════════════════════════════════════════════════════
     _L=0.050; _WL=0.41; _MG=0.040; _R=_L+_WL+_MG; _WR=0.41
     _TOP=_yc-0.020; _VG=0.050
 
     _ab=_bar_panel(_fig,_L,_TOP,      _WL,_OP_ATT,"Attacking")
-    _db=_bar_panel(_fig,_L,_ab-_VG,  _WL,_OP_DEF,"Defensive")
+    _   =_bar_panel(_fig,_L,_ab-_VG,  _WL,_OP_DEF,"Defensive")
+    _pb =_bar_panel(_fig,_R,_TOP,      _WR,_OP_POS,"Possession")
     if _OP_PERF:
-        _   =_bar_panel(_fig,_L,_db-_VG,_WL,_OP_PERF,"Performance")
-    _       =_bar_panel(_fig,_R,_TOP,   _WR,_OP_POS,"Possession")
+        _ = _bar_panel(_fig,_R,_pb-_VG,_WR,_OP_PERF,"Performance")
 
     # ── render ──
     st.pyplot(_fig,use_container_width=True)
