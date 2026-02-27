@@ -33,20 +33,15 @@ def _read_csv_bytes(data: bytes) -> pd.DataFrame:
 def _read_csv_path(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
-csv_candidates = list(Path.cwd().glob("all_leagues_stats.csv")) + list(Path.cwd().glob("*.csv"))
-csv_candidates = sorted(set(csv_candidates), key=lambda c: c.name)
+csv_candidates = sorted(Path.cwd().glob("*.csv"), key=lambda c: c.name)
 
 if csv_candidates:
     _csv_names = [c.name for c in csv_candidates]
-    _csv_choice = st.selectbox("Select team stats CSV:", ["— Upload a file —"] + _csv_names)
-    if _csv_choice == "— Upload a file —":
-        up = st.file_uploader("Upload your team stats CSV", type=["csv"])
-        if up is None:
-            st.info("Please upload your team stats CSV exported from the Wyscout scraper.")
-            st.stop()
-        df_raw = _read_csv_bytes(up.getvalue())
-    else:
-        df_raw = _read_csv_path(str(Path.cwd() / _csv_choice))
+    # Default to WORLD file if present, else first file
+    _world_files = [n for n in _csv_names if n.upper().startswith("WORLD")]
+    _default_idx = _csv_names.index(_world_files[0]) if _world_files else 0
+    _csv_choice = st.selectbox("Team stats CSV:", _csv_names, index=_default_idx)
+    df_raw = _read_csv_path(str(Path.cwd() / _csv_choice))
 else:
     up = st.file_uploader("Upload your team stats CSV", type=["csv"])
     if up is None:
