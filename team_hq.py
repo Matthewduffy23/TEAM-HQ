@@ -1746,55 +1746,36 @@ else:
         }
         return _sc.get(sty, "#6b7280")
 
-    # ── text measurement helpers (Agg-safe) ──
-    def _op_get_renderer(fig):
-        fig.canvas.draw()
-        try:
-            return fig.canvas.get_renderer()
-        except AttributeError:
-            return getattr(fig.canvas, "renderer", None)
+    # ── chip row helper — fixed sizes, no renderer needed ──
+    # At figsize 15×10.8 (1500×1080 @ dpi=100):
+    #   figure height = 1080px, figure width = 1500px
+    #   fs=10pt → ~14px tall, ~7.5px per char wide
+    _FIG_W_PX = 1500.0
+    _FIG_H_PX = 1080.0
 
-    def _op_tw(fig, s, *, fs=10, weight="normal"):
-        r = _op_get_renderer(fig)
-        if r is not None:
-            try:
-                t = fig.text(0, 0, s, fontsize=fs, fontweight=weight,
-                             transform=fig.transFigure, alpha=0)
-                w = t.get_window_extent(renderer=r).width / fig.bbox.width
-                t.remove(); return w
-            except Exception:
-                pass
-        return len(str(s)) * 0.0085 * (fs / 10.0)
-
-    def _op_th(fig, s="Hg", *, fs=10, weight="normal"):
-        r = _op_get_renderer(fig)
-        if r is not None:
-            try:
-                t = fig.text(0, 0, s, fontsize=fs, fontweight=weight,
-                             transform=fig.transFigure, alpha=0)
-                h = t.get_window_extent(renderer=r).height / fig.bbox.height
-                t.remove(); return h
-            except Exception:
-                pass
-        return (fs * 1.4) / (fig.get_figheight() * fig.dpi)
-
-    # ── chip row helper ──
-    def _op_chip_row(fig, items, y, bg, *, fs=10.1, x0=0.040):
+    def _op_chip_row(fig, items, y, bg, *, fs=10.0, x0=0.040):
         if not items: return y
-        x = x0; pad_x=0.006; pad_y=0.003
-        h = _op_th(fig, fontsize=fs, weight="900") + pad_y*2
+        # Fixed chip height based on font size (pts → px → fraction)
+        ch_px = fs * 1.55          # chip height in pixels (generous)
+        cw_per_char = fs * 0.72    # avg char width in pixels
+        h  = ch_px / _FIG_H_PX    # fraction
+        pad_x = 6.0 / _FIG_W_PX   # 6px padding each side
+        pad_y = 3.0 / _FIG_H_PX
+        x = x0
         for s in items:
-            w = _op_tw(fig, s, fs=fs, weight="900") + pad_x*2
+            w = (len(str(s)) * cw_per_char + 12) / _FIG_W_PX
             if x + w > 0.965:
-                x = x0; y -= h + 0.008
+                x = x0; y -= h + 8.0/_FIG_H_PX
             fig.patches.append(mpatches.FancyBboxPatch(
-                (x, y-h*0.74), w, h,
-                boxstyle=f"round,pad=0.001,rounding_size={h*0.40}",
-                transform=fig.transFigure, facecolor=bg, edgecolor="none"))
-            fig.text(x+pad_x, y-h*0.30, s, fontsize=fs, color="#111111",
+                (x, y - h * 0.80), w, h,
+                boxstyle=f"round,pad=0.001,rounding_size={h*0.38}",
+                transform=fig.transFigure,
+                facecolor=bg, edgecolor="none"))
+            fig.text(x + pad_x, y - h * 0.32, s,
+                     fontsize=fs, color="#111111",
                      va="center", ha="left", fontweight="900")
-            x += w + 0.007
-        return y - h - 0.010
+            x += w + 7.0/_FIG_W_PX
+        return y - h - 10.0/_FIG_H_PX
 
     # ── bar panel helper (exact match to player one-pager) ──
     _OP_BAR_PX = 24; _OP_GAP_PX = 6; _OP_STEP_PX = 30
@@ -1802,15 +1783,14 @@ else:
 
     def _op_bar_panel(fig, left, top, width, triples, title):
         n = len(triples)
-        fig.canvas.draw()
-        # use figsize height rather than bbox which may not be set on cloud
-        fig_h = fig.get_figheight() * fig.dpi
+        fig_h = _FIG_H_PX   # fixed — no renderer needed
         ax_h = (max(1,n)*_OP_STEP_PX) / fig_h
         bottom = top - ax_h
 
         labels = [t[0] for t in triples]
-        max_lw = max((_op_tw(fig, s, fs=_OP_LABEL_FS, weight="bold") for s in labels), default=0)
-        gutter = max(max_lw, 0.12) + 0.006
+        # estimate gutter from longest label char count
+        max_chars = max((len(s) for s in labels), default=8)
+        gutter = max(max_chars * _OP_LABEL_FS * 0.72 / _FIG_W_PX, 0.10) + 0.006
 
         ax_bg = fig.add_axes([left, bottom, width, ax_h])
         ax_bg.set_facecolor(_OP_PANEL_BG)
