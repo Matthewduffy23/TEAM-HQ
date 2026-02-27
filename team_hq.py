@@ -1902,7 +1902,7 @@ else:
             ax.add_patch(mpatches.Rectangle((0,yi-bar_du/2),v,bar_du,
                          facecolor=_dc(v),edgecolor="none"))
             ax.text(1.0,yi,t,va="center",ha="left",
-                    color="#FFFFFF",fontsize=VALUE_FS+0.5,weight="700")
+                    color="#0B0B0B",fontsize=VALUE_FS+0.5,weight="700")
         for sp in ax.spines.values(): sp.set_visible(False)
         ax.tick_params(axis="both",length=0,labelsize=0); ax.grid(False)
         ax.axvline(50,color="#E5E7EB",linestyle="--",lw=1.8,alpha=0.85,zorder=5)
@@ -2029,7 +2029,7 @@ else:
     _r_h=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*2
 
     # Full-word labels
-    for _rlb, _rv in [("Attack", _op_att), ("Defence", _op_def), ("Possession", _op_pos)]:
+    for _rlb, _rv in [("ATT", _op_att), ("DEF", _op_def), ("POS", _op_pos)]:
         _lw=_tw(_fig,_rlb,fontsize=_r_fs,weight="900")+_pad_r*2
         _nw2=_tw(_fig,str(int(round(_rv))),fontsize=_r_fs,weight="900")+_pad_r*1.8
         _nh2=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*1.8
