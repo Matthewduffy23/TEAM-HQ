@@ -1054,14 +1054,39 @@ else:
         "Possession %", "Passes p90", "Long Passes p90",
         "Passes to Final Third p90", "Points", "Expected Points"
     ]
-    radar_metrics = [m for m in RADAR_METRICS_TEAM if m in df.columns]
+
+    # ── £ Performance option ──
+    _fp_c1, _fp_c2, _fp_c3 = st.columns([1, 1, 1])
+    use_fp = _fp_c1.toggle("Use £ Performance instead of Points", False,
+                            key=f"ts_fp_toggle_{sel_team}")
+    fp_budget_label = ""
+    _fp_pct = 50.0
+    if use_fp:
+        _fp_league_size = len(pool)  # default pool size
+        fp_rank = _fp_c2.number_input("League rank", min_value=1, max_value=200,
+                                       value=1, step=1,
+                                       key=f"ts_fp_rank_{sel_team}")
+        fp_n    = _fp_c3.number_input("Out of (N teams)", min_value=2, max_value=200,
+                                       value=max(2, _fp_league_size), step=1,
+                                       key=f"ts_fp_n_{sel_team}")
+        # Convert rank to percentile: rank 1 = best = 100th percentile
+        _fp_pct = float(np.clip((fp_n - fp_rank) / (fp_n - 1) * 100, 0, 100))
+        fp_budget_label = "£ Performance"
+
+        # Swap Points out of radar metrics
+        RADAR_METRICS_TEAM = [m if m != "Points" else "__fp__" for m in RADAR_METRICS_TEAM]
+
+    radar_metrics = [m for m in RADAR_METRICS_TEAM if m == "__fp__" or m in df.columns]
 
     # Custom label override for Team Profile radar only
     PROFILE_LABEL_OVERRIDE = {
         "Passes to Final Third p90": "Passes Final 3rd",
+        "__fp__": fp_budget_label if use_fp else "£ Perf",
     }
 
     def team_pct(t_row, pool_df, col, invert=False):
+        if col == "__fp__":
+            return _fp_pct if use_fp else 50.0
         if col not in pool_df.columns or col not in t_row.index: return 50.0
         s = pd.to_numeric(pool_df[col], errors="coerce").dropna()
         v = float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
@@ -1072,7 +1097,7 @@ else:
     pcts = [team_pct(team_row, pool, m, m in INVERT_METRICS) for m in radar_metrics]
     labels_clean = [PROFILE_LABEL_OVERRIDE.get(m, mlabel(m)) for m in radar_metrics]
 
-    # ── Radar styled like attached Python example ──
+    # ── Radar — light theme ──
     color_scale = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
     cmap = LinearSegmentedColormap.from_list("cs", color_scale)
     bar_colors = [cmap(p/100) for p in pcts]
