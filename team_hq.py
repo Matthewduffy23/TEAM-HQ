@@ -37,8 +37,16 @@ csv_candidates = list(Path.cwd().glob("all_leagues_stats.csv")) + list(Path.cwd(
 csv_candidates = [c for c in csv_candidates if not c.name.startswith("WORLD")]
 
 if csv_candidates:
-    selected_csv = st.selectbox("Select team stats CSV:", [c.name for c in csv_candidates])
-    df_raw = _read_csv_path(str(Path.cwd() / selected_csv))
+    _csv_names = [c.name for c in csv_candidates]
+    _csv_choice = st.selectbox("Select team stats CSV:", ["— Upload a file —"] + _csv_names)
+    if _csv_choice == "— Upload a file —":
+        up = st.file_uploader("Upload your team stats CSV", type=["csv"])
+        if up is None:
+            st.info("Please upload your team stats CSV exported from the Wyscout scraper.")
+            st.stop()
+        df_raw = _read_csv_bytes(up.getvalue())
+    else:
+        df_raw = _read_csv_path(str(Path.cwd() / _csv_choice))
 else:
     up = st.file_uploader("Upload your team stats CSV", type=["csv"])
     if up is None:
@@ -678,16 +686,17 @@ with st.expander("Metric filters", expanded=False):
             _mf_mode = _cols[1].radio("Mode", ["Raw", "Percentile"],
                                       horizontal=True, key=f"ts_pro_mf_mode_{_mfi}")
             _is_inv = _mf_col in INVERT_METRICS
+            _is_max = _is_inv or _mf_col == "Avg Age"  # Avg Age = max filter
             _mf_cmin = float(pd.to_numeric(df[_mf_col], errors="coerce").min())
             _mf_cmax = float(pd.to_numeric(df[_mf_col], errors="coerce").max())
             if _mf_mode == "Raw":
-                if _is_inv:
+                if _is_max:
                     _mf_val = st.slider(f"Max {mlabel(_mf_col)}", _mf_cmin, _mf_cmax, _mf_cmax,
                                         key=f"ts_pro_mf_raw_{_mfi}")
                 else:
                     _mf_val = st.slider(f"Min {mlabel(_mf_col)}", _mf_cmin, _mf_cmax, _mf_cmin,
                                         key=f"ts_pro_mf_raw_{_mfi}")
-                _pro_metric_filters.append((_mf_col, "Raw", _mf_val, _is_inv))
+                _pro_metric_filters.append((_mf_col, "Raw", _mf_val, _is_max))
             else:
                 _mf_pct = st.slider(f"Min percentile — {mlabel(_mf_col)}", 0, 100, 0,
                                     key=f"ts_pro_mf_pct_{_mfi}")
@@ -1489,7 +1498,7 @@ with st.expander("Scatter settings", expanded=False):
     sc_hl_team      = st.selectbox("Highlight team", ["(None)"] + team_options, key="ts_sc_hl")
     sc_show_medians = st.checkbox("Show median lines", True, key="ts_sc_medians")
     sc_shade_iqr    = st.checkbox("Shade IQR (25–75%)", True, key="ts_sc_iqr")
-    sc_point_size   = st.slider("Point size", 24, 300, 200, key="ts_sc_size")
+    sc_point_size   = st.slider("Point size", 24, 400, 250, key="ts_sc_size")
     sc_alpha        = st.slider("Point opacity", 0.2, 1.0, 0.88, 0.02, key="ts_sc_alpha")
     sc_marker       = st.selectbox("Marker", ["o","s","^","D"], key="ts_sc_marker")
     sc_tick_mode    = st.selectbox("Tick spacing", ["Auto","0.05","0.1","0.2","0.5","1.0"], key="ts_sc_tick")
@@ -1610,8 +1619,8 @@ else:
             ax_sc.axhline(float(np.nanmedian(_y_vals)),color=_mc2,ls=(0,(4,4)),lw=2.2,zorder=3)
 
         # Axes
-        ax_sc.set_xlabel(mlabel(sc_x), fontsize=14, fontweight="semibold", color=_SC_TXT)
-        ax_sc.set_ylabel(mlabel(sc_y), fontsize=14, fontweight="semibold", color=_SC_TXT)
+        ax_sc.set_xlabel(mlabel(sc_x), fontsize=15, fontweight="semibold", color=_SC_TXT)
+        ax_sc.set_ylabel(mlabel(sc_y), fontsize=15, fontweight="semibold", color=_SC_TXT)
 
         # Invert axis direction for metrics where lower = better
         if sc_x in INVERT_METRICS: ax_sc.invert_xaxis()
@@ -1652,7 +1661,7 @@ else:
                 _lab = ax_sc.annotate(
                     str(_lr["Team"]), (float(_lr[sc_x]), float(_lr[sc_y])),
                     xytext=(8,10), textcoords="offset points",
-                    fontsize=9, fontweight="semibold", color=_SC_TXT,
+                    fontsize=11, fontweight="semibold", color=_SC_TXT,
                     ha="left", va="bottom", zorder=6
                 )
                 _lab.set_path_effects([_pe.withStroke(linewidth=2.0, foreground=_SC_STR, alpha=0.9)])
@@ -1716,6 +1725,10 @@ with st.expander("Radar settings", expanded=False):
                                       key=f"ts_comp_b_label_{sel_team}_{comp_team_b_sel}")
     comp_show_title   = st.checkbox("Show custom title", False, key="ts_comp_show_title")
     comp_custom_title = st.text_input("Custom title", "", key="ts_comp_custom_title")
+    comp_league_a_label = st.text_input("Edit Team A league", str(row_a["League"]) if row_a is not None and "League" in row_a.index else "",
+                                        key=f"ts_comp_league_a_{sel_team}")
+    comp_league_b_label = st.text_input("Edit Team B league", str(row_b["League"]) if row_b is not None and "League" in row_b.index else "",
+                                        key=f"ts_comp_league_b_{sel_team}_{comp_team_b_sel}")
 
 # Theme colours (matching player radar exactly)
 if comp_theme == "Dark":
@@ -1846,9 +1859,9 @@ if row_a is not None and row_b is not None and radar_comp_avail:
     _sub_b = str(row_b["League"]) if "League" in row_b.index else ""
 
     fig_c.text(0.12, 0.96,  comp_team_a_label, color=_COL_A, fontsize=22, fontweight="bold", ha="left")
-    fig_c.text(0.12, 0.935, _sub_a,            color=_COL_A, fontsize=11, ha="left")
+    fig_c.text(0.12, 0.935, comp_league_a_label, color=_COL_A, fontsize=11, ha="left")
     fig_c.text(0.88, 0.96,  comp_team_b_label, color=_COL_B, fontsize=22, fontweight="bold", ha="right")
-    fig_c.text(0.88, 0.935, _sub_b,            color=_COL_B, fontsize=11, ha="right")
+    fig_c.text(0.88, 0.935, comp_league_b_label, color=_COL_B, fontsize=11, ha="right")
 
     if comp_show_title and comp_custom_title.strip():
         fig_c.text(0.5, 0.985, comp_custom_title.strip(), ha="center", fontsize=16,
@@ -2018,13 +2031,20 @@ else:
                 def _sim_color(v):
                     try: v = float(v)
                     except: return ""
-                    v = np.clip(v, 0, 100)
-                    if v >= 80:   return "background-color:#14532d;color:#fff"   # dark green
-                    elif v >= 65: return "background-color:#166534;color:#fff"   # green
-                    elif v >= 50: return "background-color:#15803d;color:#fff"   # mid green
-                    elif v >= 35: return "background-color:#ca8a04;color:#000"   # amber
-                    elif v >= 20: return "background-color:#ea580c;color:#fff"   # orange
-                    else:         return "background-color:#b91c1c;color:#fff"   # red
+                    v = float(np.clip(v, 0, 100))
+                    # Smooth fixed 0-100 diverging: dark-red → orange → yellow → green
+                    # Interpolate through 4 colour stops: 0=dark red, 33=orange, 66=yellow, 100=dark green
+                    _stops = [(140,0,0),(255,100,0),(255,210,0),(30,160,60)]
+                    _pts   = [0, 33, 66, 100]
+                    for _i in range(len(_pts)-1):
+                        if v <= _pts[_i+1]:
+                            _t = (v - _pts[_i]) / (_pts[_i+1] - _pts[_i])
+                            _r = int(_stops[_i][0] + (_stops[_i+1][0]-_stops[_i][0])*_t)
+                            _g = int(_stops[_i][1] + (_stops[_i+1][1]-_stops[_i][1])*_t)
+                            _b = int(_stops[_i][2] + (_stops[_i+1][2]-_stops[_i][2])*_t)
+                            _fg = "#fff" if v < 55 else "#000"
+                            return f"background-color:rgb({_r},{_g},{_b});color:{_fg}"
+                    return "background-color:rgb(30,160,60);color:#000" 
 
                 _fmt_dict = {"Similarity": "{:.1f}"}
                 for _cc in _ctx_avail:
