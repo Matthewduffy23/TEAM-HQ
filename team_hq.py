@@ -112,17 +112,6 @@ for c in NUMERIC_COLS:
     if c in df_raw.columns:
         df_raw[c] = pd.to_numeric(df_raw[c], errors="coerce")
 
-# ── Derive Goals Against p90 from Goals Against / Matches if the p90 col is
-#    missing or all-zero (common Wyscout export issue) ──────────────────────
-if ("Goals Against" in df_raw.columns and "Matches" in df_raw.columns):
-    _ga_col = pd.to_numeric(df_raw.get("Goals Against p90"), errors="coerce")
-    _all_zero_or_missing = _ga_col.isna().all() or (_ga_col.fillna(0) == 0).all()
-    if _all_zero_or_missing:
-        _matches = pd.to_numeric(df_raw["Matches"], errors="coerce").replace(0, np.nan)
-        df_raw["Goals Against p90"] = (
-            pd.to_numeric(df_raw["Goals Against"], errors="coerce") / _matches
-        ).round(2)
-
 # ─────────────────────────────────────────────
 # METRIC DISPLAY LABELS
 # ─────────────────────────────────────────────
