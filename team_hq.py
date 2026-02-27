@@ -1746,27 +1746,42 @@ else:
         }
         return _sc.get(sty, "#6b7280")
 
-    # ── text measurement helpers ──
-    def _op_tw(fig, s, *, fs=10, weight="normal"):
-        t = fig.text(0, 0, s, fontsize=fs, fontweight=weight,
-                     transform=fig.transFigure, alpha=0)
+    # ── text measurement helpers (Agg-safe) ──
+    def _op_get_renderer(fig):
         fig.canvas.draw()
-        r = fig.canvas.get_renderer()
-        w = t.get_window_extent(renderer=r).width / fig.bbox.width
-        t.remove(); return w
+        try:
+            return fig.canvas.get_renderer()
+        except AttributeError:
+            return getattr(fig.canvas, "renderer", None)
+
+    def _op_tw(fig, s, *, fs=10, weight="normal"):
+        r = _op_get_renderer(fig)
+        if r is not None:
+            try:
+                t = fig.text(0, 0, s, fontsize=fs, fontweight=weight,
+                             transform=fig.transFigure, alpha=0)
+                w = t.get_window_extent(renderer=r).width / fig.bbox.width
+                t.remove(); return w
+            except Exception:
+                pass
+        return len(str(s)) * 0.0085 * (fs / 10.0)
 
     def _op_th(fig, s="Hg", *, fs=10, weight="normal"):
-        t = fig.text(0, 0, s, fontsize=fs, fontweight=weight,
-                     transform=fig.transFigure, alpha=0)
-        fig.canvas.draw()
-        r = fig.canvas.get_renderer()
-        h = t.get_window_extent(renderer=r).height / fig.bbox.height
-        t.remove(); return h
+        r = _op_get_renderer(fig)
+        if r is not None:
+            try:
+                t = fig.text(0, 0, s, fontsize=fs, fontweight=weight,
+                             transform=fig.transFigure, alpha=0)
+                h = t.get_window_extent(renderer=r).height / fig.bbox.height
+                t.remove(); return h
+            except Exception:
+                pass
+        return (fs * 1.4) / (fig.get_figheight() * fig.dpi)
 
-    # ── chip row helper (same as player one-pager) ──
-    def _op_chip_row(fig, items, y, bg, *, fs=10.1, x0=0.055):
+    # ── chip row helper ──
+    def _op_chip_row(fig, items, y, bg, *, fs=10.1, x0=0.040):
         if not items: return y
-        x = x0; pad_x=0.005; pad_y=0.003
+        x = x0; pad_x=0.006; pad_y=0.003
         h = _op_th(fig, fontsize=fs, weight="900") + pad_y*2
         for s in items:
             w = _op_tw(fig, s, fs=fs, weight="900") + pad_x*2
@@ -1774,9 +1789,9 @@ else:
                 x = x0; y -= h + 0.008
             fig.patches.append(mpatches.FancyBboxPatch(
                 (x, y-h*0.74), w, h,
-                boxstyle=f"round,pad=0.001,rounding_size={h*0.45}",
+                boxstyle=f"round,pad=0.001,rounding_size={h*0.40}",
                 transform=fig.transFigure, facecolor=bg, edgecolor="none"))
-            fig.text(x+pad_x, y-h*0.33, s, fontsize=fs, color="#111111",
+            fig.text(x+pad_x, y-h*0.30, s, fontsize=fs, color="#111111",
                      va="center", ha="left", fontweight="900")
             x += w + 0.007
         return y - h - 0.010
@@ -1788,13 +1803,14 @@ else:
     def _op_bar_panel(fig, left, top, width, triples, title):
         n = len(triples)
         fig.canvas.draw()
-        fig_h = fig.bbox.height
+        # use figsize height rather than bbox which may not be set on cloud
+        fig_h = fig.get_figheight() * fig.dpi
         ax_h = (max(1,n)*_OP_STEP_PX) / fig_h
         bottom = top - ax_h
 
         labels = [t[0] for t in triples]
         max_lw = max((_op_tw(fig, s, fs=_OP_LABEL_FS, weight="bold") for s in labels), default=0)
-        gutter = max_lw + 0.006
+        gutter = max(max_lw, 0.12) + 0.006
 
         ax_bg = fig.add_axes([left, bottom, width, ax_h])
         ax_bg.set_facecolor(_OP_PANEL_BG)
