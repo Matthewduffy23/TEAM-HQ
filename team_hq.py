@@ -37,7 +37,6 @@ csv_candidates = sorted(Path.cwd().glob("*.csv"), key=lambda c: c.name)
 
 if csv_candidates:
     _csv_names = [c.name for c in csv_candidates]
-    # Default to WORLD file if present, else first file
     _world_files = [n for n in _csv_names if n.upper().startswith("WORLD")]
     _default_idx = _csv_names.index(_world_files[0]) if _world_files else 0
     _csv_choice = st.selectbox("Team stats CSV:", _csv_names, index=_default_idx)
@@ -151,7 +150,7 @@ METRIC_LABELS = {
 def mlabel(col):
     return METRIC_LABELS.get(col, col)
 
-# Metrics where lower = better (used in sidebar filters, leaderboard, scatter, radar)
+# Metrics where lower = better
 INVERT_METRICS = {"xG Against p90", "Goals Against p90", "Shots Against p90", "PPDA", "Goals Against"}
 
 # ─────────────────────────────────────────────
@@ -241,18 +240,15 @@ with st.sidebar:
     all_leagues = sorted(df_raw["League"].dropna().unique().tolist()) if "League" in df_raw.columns else []
     all_regions = sorted({league_region(lg) for lg in all_leagues})
 
-    # ── Regions ──
     sel_regions = st.multiselect("Regions", all_regions, default=all_regions, key="ts_regions")
     region_leagues = [lg for lg in all_leagues if league_region(lg) in sel_regions]
 
-    # ── League Presets ──
     st.markdown("#### League Presets")
     pc1, pc2, pc3 = st.columns(3)
     use_top5    = pc1.checkbox("Top 5",  False, key="ts_top5")
     use_top20   = pc2.checkbox("Top 20", False, key="ts_top20")
     use_efl     = pc3.checkbox("EFL",    False, key="ts_efl")
 
-    # ── GBE Bands ──
     st.markdown("#### GBE Bands")
     _band_cols = st.columns(3)
     use_band1 = _band_cols[0].checkbox("Band 1", False, key="ts_band1")
@@ -263,7 +259,6 @@ with st.sidebar:
     use_band5 = _band_cols2[1].checkbox("Band 5", False, key="ts_band5")
     use_band6 = _band_cols2[2].checkbox("Band 6", False, key="ts_band6")
 
-    # ── League Strength Slider ──
     st.markdown("#### League Strength")
     use_strength = st.toggle("Filter by league strength", False, key="ts_use_strength")
     if use_strength:
@@ -271,7 +266,6 @@ with st.sidebar:
     else:
         strength_range = (0, 100)
 
-    # Build seed from presets + bands
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
@@ -284,7 +278,6 @@ with st.sidebar:
     if _sel_bands:
         seed |= {lg for lg in region_leagues if gbe_league_band(lg) in _sel_bands}
 
-    # Strength filter applied to seed/region pool
     def _lg_strength(lg):
         return LEAGUE_STRENGTHS.get(str(lg).strip(), 50.0)
 
@@ -399,7 +392,6 @@ df["ATT"] = df.apply(compute_attack, axis=1)
 df["DEF"] = df.apply(compute_defense, axis=1)
 df["POS"] = df.apply(compute_possession, axis=1)
 
-# Apply score filter
 if score_filter_type != "None" and score_threshold > 0:
     scol = {"Overall":"OVR","Attack":"ATT","Defense":"DEF","Possession":"POS"}[score_filter_type]
     df = df[df[scol] >= score_threshold]
@@ -544,7 +536,6 @@ def metric_val(row, col):
 # LEAGUE POSITION HELPERS
 # ─────────────────────────────────────────────
 def get_league_pos(row, df_all, metric, ascending=False):
-    """Return rank of team within its own league for given metric."""
     lg = row.get("League","")
     if not lg or metric not in df_all.columns:
         return None, None
@@ -562,7 +553,7 @@ def get_league_pos(row, df_all, metric, ascending=False):
     return pos, n
 
 # ─────────────────────────────────────────────
-# METRIC SECTIONS (new order per spec)
+# METRIC SECTIONS
 # ─────────────────────────────────────────────
 TEAM_METRICS_ATT = [
     ("Crosses",                "Crosses p90"),
@@ -608,7 +599,6 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════
 st.subheader("🏆 Team Ranking Image")
 
-# ── Composite score: Pressing = PPDA percentile ──
 df["PRS"] = df.apply(lambda r: r.get(score_col("PPDA"), np.nan), axis=1)
 
 _TRI_SCORE_COLS = {
@@ -623,7 +613,6 @@ _TRI_ALL_LABELS = list(_TRI_SCORE_COLS.keys()) + [mlabel(c) for c in _TRI_RAW_CO
 _TRI_RAW_LABEL_TO_COL = {mlabel(c): c for c in _TRI_RAW_COLS}
 
 def _tri_format(val, col_name):
-    """1 dp; append % if the actual column name contains '%'"""
     try:
         v = float(val)
         if np.isnan(v): return "—"
@@ -646,7 +635,7 @@ with st.expander("Ranking Image settings", expanded=True):
             tri_rank_col   = "_tri_combo"
             tri_rank_label = " + ".join(tri_combo_choices) if tri_combo_choices else "Overall"
             tri_is_raw     = False
-            tri_pct_col    = "_tri_combo"   # scores never have % suffix
+            tri_pct_col    = "_tri_combo"
         else:
             tri_score_choice = st.selectbox("Score", list(_TRI_SCORE_COLS.keys()), key="tri_score_choice")
             tri_rank_col     = _TRI_SCORE_COLS[tri_score_choice]
@@ -658,7 +647,7 @@ with st.expander("Ranking Image settings", expanded=True):
         tri_rank_col  = _TRI_RAW_LABEL_TO_COL.get(tri_raw_label, _TRI_RAW_COLS[0])
         tri_rank_label = tri_raw_label
         tri_is_raw     = True
-        tri_pct_col    = tri_rank_col   # use actual col name for % detection
+        tri_pct_col    = tri_rank_col
 
     _lc1, _lc2, _lc3 = st.columns(3)
     tri_league_filter = _lc1.selectbox("Filter by league", ["All"] + sorted(df["League"].dropna().unique()),
@@ -670,12 +659,26 @@ with st.expander("Ranking Image settings", expanded=True):
     tri_t2 = st.text_input("Title line 2", tri_rank_label.upper(),         key="tri_t2")
     tri_t3 = st.text_input("Title line 3", "Performance Index  |  Wyscout", key="tri_t3")
 
+    # ── NEW: Highlight team ──
+    _tri_team_opts = sorted(df["Team"].dropna().unique().tolist())
+    tri_highlight_team = st.selectbox(
+        "Highlight team (gold overlay)",
+        ["(None)"] + _tri_team_opts,
+        key="tri_highlight_team"
+    )
+
+    # ── NEW: Reverse sort order ──
+    tri_reverse_order = st.checkbox(
+        "Reverse order (ascending — show worst → best)",
+        False,
+        key="tri_reverse_order"
+    )
+
 # ── Build display dataframe ──
 _tri_df = df.copy()
 if tri_league_filter != "All":
     _tri_df = _tri_df[_tri_df["League"] == tri_league_filter]
 
-# Handle combined score
 if tri_rank_mode == "Score" and tri_use_combo and tri_combo_choices:
     _valid = [_TRI_SCORE_COLS[s] for s in tri_combo_choices if s in _TRI_SCORE_COLS and _TRI_SCORE_COLS[s] in _tri_df.columns]
     if _valid:
@@ -691,14 +694,20 @@ else:
     _tri_asc = False
     _tri_df["_tri_val"] = pd.to_numeric(_tri_df[tri_rank_col], errors="coerce")
 
-_tri_df = _tri_df.dropna(subset=["_tri_val"]).sort_values("_tri_val", ascending=_tri_asc).head(int(tri_top_n))
+# ── Apply reverse order toggle ──
+_tri_asc_final = (not _tri_asc) if tri_reverse_order else _tri_asc
+_tri_df = _tri_df.dropna(subset=["_tri_val"]).sort_values("_tri_val", ascending=_tri_asc_final).head(int(tri_top_n))
+
+# ── Resolve highlight team ──
+_tri_highlight = tri_highlight_team if tri_highlight_team != "(None)" else None
+
 
 # ── Render image ──
-def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines, theme, export_mode, top_n):
+def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines, theme, export_mode, top_n, highlight_team=None):
     if df_show.empty:
         return b""
 
-    # Theme palette — matches existing dark/light style
+    # Theme palette
     if theme == "Dark":
         BG="#0a0f1c"; ROW_A="#0f1628"; ROW_B="#0b1222"
         TXT="#ffffff"; SUB="#b8c0cf"; FOOT="#9aa6bd"; DIV="#23304a"
@@ -709,6 +718,13 @@ def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines,
         TXT="#111111"; SUB="#777777"; FOOT="#9b9b9b"; DIV="#e2e2e2"
         BAR_BG="#e1e1e1"; BAR_FG="#bfbfbf"
         RANK_BG="#f3f3f3"; RANK_EDGE="#c0c0c0"
+
+    # Highlight colours (gold — same as attacker script)
+    HILITE      = "#f6d46b"
+    HILITE_EDGE = "#d2a100"
+
+    def is_hi(row):
+        return highlight_team and str(row.get("Team", "")) == highlight_team
 
     scores = pd.to_numeric(df_show["_tri_val"], errors="coerce")
     max_score = float(scores.max()) if scores.notna().any() else 1.0
@@ -741,9 +757,22 @@ def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines,
 
         for i,(_, row) in enumerate(df_show.iterrows()):
             y=ROW_TOP-(i+0.5)*row_gap
+
+            # Row background
             ax.add_patch(Rectangle((LEFT,y-row_h/2),RIGHT-LEFT,row_h,
                                    color=(ROW_A if i%2==0 else ROW_B),zorder=1))
-            ax.scatter([RANK_X],[y],s=1320,facecolor=RANK_BG,edgecolor=RANK_EDGE,linewidths=2.2,zorder=4)
+
+            # Gold highlight overlay
+            if is_hi(row):
+                ax.add_patch(Rectangle((LEFT,y-row_h/2),RIGHT-LEFT,row_h,
+                                       color=HILITE,alpha=0.22,zorder=2))
+                ax.add_patch(Rectangle((LEFT,y-row_h/2),RIGHT-LEFT,row_h,
+                                       fill=False,edgecolor=HILITE_EDGE,lw=2.2,zorder=3))
+
+            # Rank badge
+            ax.scatter([RANK_X],[y],s=1320,facecolor=RANK_BG,
+                       edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                       linewidths=2.2,zorder=4)
             ax.text(RANK_X,y,str(i+1),fontsize=16,fontweight="bold",color=TXT,ha="center",va="center",zorder=5)
 
             badge=get_team_badge(str(row.get("Team","")))
@@ -769,7 +798,7 @@ def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines,
     N=len(df_show); ROW_H=0.82; HEADER_H=1.70; FOOT_H=0.55
     TOTAL_H=HEADER_H+N*ROW_H+FOOT_H
     fig=plt.figure(figsize=(8.3,TOTAL_H),dpi=220)
-    ax=fig.add_axes([0,0,1,1]); ax.set_xlim(0,1.0); ax.set_ylim(0,TOTAL_H); ax.axis("off")
+    ax=fig.add_axes([0,0,1,1.0]); ax.set_xlim(0,1.0); ax.set_ylim(0,TOTAL_H); ax.axis("off")
     ax.add_patch(Rectangle((0,0),1.0,TOTAL_H,color=BG,zorder=0))
 
     title_y=TOTAL_H-0.25
@@ -785,9 +814,22 @@ def _tri_make_image(df_show, rank_col, rank_label, pct_col, is_raw, title_lines,
 
     for i,(_, row) in enumerate(df_show.iterrows()):
         y=base_y-i*ROW_H
+
+        # Row background
         ax.add_patch(Rectangle((LEFT,y-ROW_H/2),RIGHT-LEFT,ROW_H,
                                color=(ROW_A if i%2==0 else ROW_B),zorder=1))
-        ax.scatter([0.07],[y],s=520,facecolor=RANK_BG,edgecolor=RANK_EDGE,linewidths=1.2,zorder=4)
+
+        # Gold highlight overlay
+        if is_hi(row):
+            ax.add_patch(Rectangle((LEFT,y-ROW_H/2),RIGHT-LEFT,ROW_H,
+                                   color=HILITE,alpha=0.25,zorder=2))
+            ax.add_patch(Rectangle((LEFT,y-ROW_H/2),RIGHT-LEFT,ROW_H,
+                                   fill=False,edgecolor=HILITE_EDGE,lw=1.3,zorder=3))
+
+        # Rank badge
+        ax.scatter([0.07],[y],s=520,facecolor=RANK_BG,
+                   edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                   linewidths=1.2,zorder=4)
         ax.text(0.07,y,str(i+1),fontsize=10,fontweight="bold",color=TXT,ha="center",va="center",zorder=5)
 
         badge=get_team_badge(str(row.get("Team","")))
@@ -817,7 +859,8 @@ _tri_img = _tri_make_image(
     _tri_df, "OVR" if not tri_is_raw else tri_rank_col,
     tri_rank_label, tri_pct_col, tri_is_raw,
     [tri_t1, tri_t2, tri_t3],
-    tri_theme, tri_export, int(tri_top_n)
+    tri_theme, tri_export, int(tri_top_n),
+    highlight_team=_tri_highlight
 )
 if _tri_img:
     st.image(_tri_img, use_column_width=True)
@@ -879,7 +922,6 @@ pro_league_filter = st.selectbox(
     key="ts_pro_league"
 )
 
-# ── Metric filters ──
 with st.expander("Metric filters", expanded=False):
     _pro_avail_numeric = [c for c in NUMERIC_COLS if c in df.columns]
     _pro_mf_num = st.number_input("Number of filters", 1, 5, 1, key="ts_pro_mf_num")
@@ -895,7 +937,7 @@ with st.expander("Metric filters", expanded=False):
             _mf_mode = _cols[1].radio("Mode", ["Raw", "Percentile"],
                                       horizontal=True, key=f"ts_pro_mf_mode_{_mfi}")
             _is_inv = _mf_col in INVERT_METRICS
-            _is_max = _is_inv or _mf_col == "Avg Age"  # Avg Age = max filter
+            _is_max = _is_inv or _mf_col == "Avg Age"
             _mf_cmin = float(pd.to_numeric(df[_mf_col], errors="coerce").min())
             _mf_cmax = float(pd.to_numeric(df[_mf_col], errors="coerce").max())
             if _mf_mode == "Raw":
@@ -913,7 +955,6 @@ with st.expander("Metric filters", expanded=False):
 
 df_pro = df_sorted.copy()
 
-# Apply metric filters to pro layout pool
 for _mf_col, _mf_mode, _mf_val, _mf_inv in _pro_metric_filters:
     if _mf_col not in df_pro.columns:
         continue
@@ -938,7 +979,6 @@ for i, (_, row) in enumerate(df_pro.iterrows()):
     defv= fmt2(row.get("DEF",0))
     pos = fmt2(row.get("POS",0))
 
-    # Points & xPoints league positions
     pts_pos, pts_n = get_league_pos(row, df, "Points", ascending=False)
     xpts_pos, xpts_n = get_league_pos(row, df, "Expected Points", ascending=False)
 
@@ -1014,7 +1054,7 @@ st.markdown("---")
 st.subheader("🎯 Team Profile")
 
 sel_team = st.selectbox("Select team", team_options, key="ts_profile_team")
-team_league = team_league_map.get(sel_team, "")  # always defined for Feature F/Y below
+team_league = team_league_map.get(sel_team, "")
 team_row = df[df["Team"] == sel_team]
 if team_row.empty:
     st.info("Team not found in current filter.")
@@ -1032,7 +1072,6 @@ else:
     )
     pool = df[df["League"].isin(comp_leagues)] if comp_leagues else df[df["League"] == team_league]
 
-    # Editable title & subtitle — value= reseeds automatically when sel_team changes
     _pool_label = ", ".join(comp_leagues) if comp_leagues else team_league
     c_title, c_sub = st.columns(2)
     with c_title:
@@ -1055,30 +1094,25 @@ else:
         "Passes to Final Third p90", "Points", "Expected Points"
     ]
 
-    # ── £ Performance option ──
     _fp_c1, _fp_c2, _fp_c3 = st.columns([1, 1, 1])
     use_fp = _fp_c1.toggle("Use £ Performance instead of Points", False,
                             key=f"ts_fp_toggle_{sel_team}")
     fp_budget_label = ""
     _fp_pct = 50.0
     if use_fp:
-        _fp_league_size = len(pool)  # default pool size
+        _fp_league_size = len(pool)
         fp_rank = _fp_c2.number_input("League rank", min_value=1, max_value=200,
                                        value=1, step=1,
                                        key=f"ts_fp_rank_{sel_team}")
         fp_n    = _fp_c3.number_input("Out of (N teams)", min_value=2, max_value=200,
                                        value=max(2, _fp_league_size), step=1,
                                        key=f"ts_fp_n_{sel_team}")
-        # Convert rank to percentile: rank 1 = best = 100th percentile
         _fp_pct = float(np.clip((fp_n - fp_rank) / (fp_n - 1) * 100, 0, 100))
         fp_budget_label = "£ Performance"
-
-        # Swap Points out of radar metrics
         RADAR_METRICS_TEAM = [m if m != "Points" else "__fp__" for m in RADAR_METRICS_TEAM]
 
     radar_metrics = [m for m in RADAR_METRICS_TEAM if m == "__fp__" or m in df.columns]
 
-    # Custom label override for Team Profile radar only
     PROFILE_LABEL_OVERRIDE = {
         "Passes to Final Third p90": "Passes Final 3rd",
         "__fp__": fp_budget_label if use_fp else "£ Perf",
@@ -1097,7 +1131,6 @@ else:
     pcts = [team_pct(team_row, pool, m, m in INVERT_METRICS) for m in radar_metrics]
     labels_clean = [PROFILE_LABEL_OVERRIDE.get(m, mlabel(m)) for m in radar_metrics]
 
-    # ── Radar — light theme ──
     color_scale = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
     cmap = LinearSegmentedColormap.from_list("cs", color_scale)
     bar_colors = [cmap(p/100) for p in pcts]
@@ -1114,7 +1147,6 @@ else:
     ax.set_facecolor('#e6e6e6')
     ax.set_rlim(0, 100)
 
-    # Draw bars
     for i in range(N):
         ax.bar(rotated_angles[i], pcts[i],
                width=bar_width, color=bar_colors[i],
@@ -1124,12 +1156,10 @@ else:
             ax.text(rotated_angles[i], label_pos, f"{int(round(pcts[i]))}",
                     ha='center', va='center', fontsize=9, weight='bold', color='white', zorder=3)
 
-    # Outer ring
     outer_circle = plt.Circle((0, 0), 100, transform=ax.transData._b,
                                color='black', fill=False, linewidth=2.4)
     ax.add_artist(outer_circle)
 
-    # Dividers
     for i in range(N):
         sep_angle = (rotated_angles[i] - bar_width / 2) % (2*np.pi)
         is_cross = any(np.isclose(sep_angle, a, atol=0.01)
@@ -1138,7 +1168,6 @@ else:
                 color='black' if is_cross else '#b0b0b0',
                 linewidth=1.8 if is_cross else 1, zorder=4)
 
-    # Metric labels
     label_radius = 125
     for i, label in enumerate(labels_clean):
         ax.text(rotated_angles[i], label_radius, label.upper(),
@@ -1149,7 +1178,6 @@ else:
     ax.spines['polar'].set_visible(False)
     ax.grid(False)
 
-    # ── Info line above chart (like player app) ──
     _pts_pos, _pts_n   = get_league_pos(team_row, df, "Points", ascending=False)
     _xpts_pos, _xpts_n = get_league_pos(team_row, df, "Expected Points", ascending=False)
     _pts_rank_str  = f"{_pts_pos}/{_pts_n}"   if _pts_pos  is not None else "—"
@@ -1166,7 +1194,6 @@ else:
         f"xPoints: {_xpts_val_str} ({_xpts_rank_str})"
     )
 
-    # Title lines (editable)
     if profile_title.strip():
         fig.text(0.05, 0.96, profile_title.strip(), fontsize=14,
                  weight='bold', ha='left', color='#111111')
@@ -1174,7 +1201,6 @@ else:
         fig.text(0.05, 0.935, profile_subtitle.strip(), fontsize=9,
                  ha='left', color='gray')
 
-    # Badge in top-right corner
     badge_img = get_team_badge(sel_team)
     if badge_img is not None:
         crest_ax = fig.add_axes([0.83, 0.82, 0.14, 0.14])
@@ -1188,8 +1214,6 @@ else:
                        f"{sel_team.replace(' ','_')}_radar.png", "image/png")
     plt.close(fig)
 
-    # ── Style / Strengths / Weaknesses ──
-    # Covers ALL metrics — not limited to radar metrics
     STYLE_TEAM = {
         "Crosses p90":              {"style": "Create Chances via Crosses"},
         "Goals p90":                {"style": "Attacking",                         "sw": "Scoring Goals",              "sw_weak": "Scoring Goals"},
@@ -1217,7 +1241,6 @@ else:
 
     HI, LO, STYLE_T = 70, 35, 65
     strengths, weaknesses, styles = [], [], []
-    # Loop over ALL metrics in STYLE_TEAM — not just radar metrics
     for m, cfg in STYLE_TEAM.items():
         if m not in df.columns: continue
         p = team_pct(team_row, pool, m, m in INVERT_METRICS)
@@ -1243,7 +1266,6 @@ else:
     st.markdown("**Weaknesses:**")
     st.markdown(chips_html(list(dict.fromkeys(weaknesses)), "#fecaca"), unsafe_allow_html=True)
 
-    # ── Scores — render as HTML to avoid pandas styler issues ──
     st.markdown("**Scores:**")
 
     SCORE_RED_S   = np.array([190, 42,  62])
@@ -1322,7 +1344,6 @@ else:
         if pd.isna(v): return "—"
         return f"{float(v):.2f}".rstrip("0").rstrip(".")
 
-    # New order per spec
     ATTACKING_F = [
         ("Crosses",                "Crosses p90",         False),
         ("Crossing Accuracy %",    "Cross Accuracy %",    False),
@@ -1364,7 +1385,6 @@ else:
     TITLE_C="#f3f5f7"; LABEL_C="#e8eef8"; DIVIDER="#ffffff"
     TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
 
-    # Editable footer
     footer_text_f = st.text_input("Footer text (optional)", "Percentile Rank",
                                    key="ts_f_footer")
 
@@ -1455,7 +1475,6 @@ else:
     )
     pool_y = df[df["League"].isin(comp_y)] if comp_y else df[df["League"]==t_league_y]
 
-    # Custom title option (default off)
     use_custom_title_y = st.checkbox("Add custom title", value=False, key="ts_y_custom_title_toggle")
     custom_title_y = ""
     if use_custom_title_y:
@@ -1497,7 +1516,6 @@ else:
     ax_y.set_facecolor("#0a0f1c")
     ax_y.set_rlim(0, 100)
 
-    # Background track bars
     for i in range(N_y):
         ax_y.bar(rot_angles_y[i], 100, width=bar_w_y, color="#444", edgecolor="none", zorder=0)
 
@@ -1509,7 +1527,6 @@ else:
             ax_y.text(rot_angles_y[i], lp, f"{int(round(p))}",
                       ha='center', va='center', fontsize=11, weight='bold', color='white', zorder=3)
 
-    # Dividers
     for i in range(N_y):
         sep = (rot_angles_y[i] - bar_w_y / 2) % (2*np.pi)
         is_cross = any(np.isclose(sep, a, atol=0.01) for a in [0, np.pi/2, np.pi, 3*np.pi/2])
@@ -1517,12 +1534,10 @@ else:
                   color=(1, 1, 1, 1.0) if is_cross else (1, 1, 1, 0.25),
                   linewidth=1.8 if is_cross else 1, zorder=4)
 
-    # Reference rings
     for rp in [90, 75, 50, 25]:
         theta_ref = np.linspace(0, 2*np.pi, 500)
         ax_y.plot(theta_ref, [rp]*500, linestyle="dotted", lw=1.2, color="lightgrey", zorder=1)
 
-    # Labels
     for i, lab in enumerate(labels_y):
         ax_y.text(rot_angles_y[i], 145, lab.upper(),
                   ha='center', va='center', fontsize=9, weight='bold', color='white', zorder=5)
@@ -1530,7 +1545,6 @@ else:
     ax_y.set_xticks([]); ax_y.set_yticks([])
     ax_y.spines['polar'].set_visible(False); ax_y.grid(False)
 
-    # Custom title (only if enabled and not empty)
     if use_custom_title_y and custom_title_y.strip():
         fig_y.text(0.5, 0.97, custom_title_y.strip(), ha='center', fontsize=13,
                    weight='bold', color='white')
@@ -1558,7 +1572,6 @@ else:
     _op_league = str(_op_r.get("League", ""))
     _op_pool   = df[df["League"] == _op_league]
 
-    # ── UI controls ──
     _oc1, _oc2, _oc3, _oc4 = st.columns(4)
 
     _op_use_fp      = _oc1.toggle("Show £ Performance",   False, key="op_use_fp")
@@ -1566,7 +1579,6 @@ else:
     _op_show_coach  = _oc3.toggle("Show Coach Name",       False, key="op_show_coach")
     _op_use_leagpos = _oc4.toggle("Use League Position Badge", False, key="op_use_leagpos")
     _op_show_style  = _oc1.toggle("Show Style Tag",        True,  key="op_show_style")
-    _op_hide_badge  = False  # derived from use_leagpos
 
     _op_fp_pct   = None
     _op_coach    = ""
@@ -1593,15 +1605,12 @@ else:
         _op_leagpos = _lp_col1.number_input("League Position", 1, 200, 1, key="op_leagpos")
         _op_leagn   = _lp_col2.number_input("Total Teams", 2, 200, _op_leagn, key="op_leagn")
 
-    # Custom league name override
     _op_custom_league = st.text_input("Override League Name (optional)", "", key="op_custom_league")
     _display_league   = _op_custom_league.strip() if _op_custom_league.strip() else _op_league
 
-    # Style tag override
     if _op_show_style:
         _op_custom_style = st.text_input("Override Style Tag (optional)", "", key="op_custom_style")
 
-    # ── pct helper ──
     def _op_pct(col, invert=False):
         if col not in _op_pool.columns: return 0.0
         s = pd.to_numeric(_op_pool[col], errors="coerce").dropna()
@@ -1610,7 +1619,6 @@ else:
         p = (s < v).mean()*100 + (s == v).mean()*50
         return float(np.clip((100-p) if invert else p, 0, 100))
 
-    # ── Style detection ──
     _p_poss  = _op_pct("Possession %")
     _p_ppda  = _op_pct("PPDA", invert=True)
     _p_lpass = _op_pct("Long Passes p90")
@@ -1630,10 +1638,8 @@ else:
     elif _p_aer >= 70:                                                               _op_style = "Low Block"
     else:                                                                            _op_style = "No Defined Style"
 
-    # Apply custom style override if provided
     _display_style = _op_custom_style.strip() if (_op_show_style and _op_custom_style.strip()) else _op_style
 
-    # ── Exact STYLE_TEAM as specified ──
     _OP_STYLE_TEAM = {
         "Crosses p90":              {"style": "Create Chances via Crosses"},
         "Goals p90":                {"style": "Attacking",                        "sw": "Scoring Goals",             "sw_weak": "Scoring Goals"},
@@ -1670,7 +1676,6 @@ else:
     _op_weaknesses = list(dict.fromkeys(_op_weaknesses))[:8]
     _op_styles     = list(dict.fromkeys(_op_styles))[:8]
 
-    # ── info helpers ──
     def _opv(col, fmt="{:.0f}"):
         v = _op_r.get(col, np.nan)
         try:    return fmt.format(float(v)) if pd.notna(v) else "—"
@@ -1686,7 +1691,6 @@ else:
     _op_def = float(_op_r.get("DEF", 0) or 0)
     _op_pos = float(_op_r.get("POS", 0) or 0)
 
-    # ── metric triples ──
     _INV_COLS = {"Goals Against p90","xG Against p90","Shots Against p90","PPDA"}
 
     def _opval(col):
@@ -1729,7 +1733,6 @@ else:
         ("Prog Runs",        "Progressive Runs p90"),
     ])
 
-    # ── Performance panel ──
     _op_matches  = float(_op_r.get("Matches", np.nan)) if pd.notna(_op_r.get("Matches")) else np.nan
     _op_pts_raw  = float(_op_r.get("Points",  np.nan)) if pd.notna(_op_r.get("Points"))  else np.nan
     _op_xpts_raw = float(_op_r.get("Expected Points", np.nan)) if pd.notna(_op_r.get("Expected Points")) else np.nan
@@ -1761,7 +1764,6 @@ else:
     if pd.notna(_op_xppg):
         _OP_PERF.append(("xPPG",  _xppg_pct, f"{_op_xppg:.2f}"))
 
-    # ── xGD: xG p90 minus xGA p90, labelled simply as "xGD" ──
     _xg_p90_v  = float(_op_r.get("xG p90",         np.nan)) if pd.notna(_op_r.get("xG p90"))         else np.nan
     _xga_p90_v = float(_op_r.get("xG Against p90", np.nan)) if pd.notna(_op_r.get("xG Against p90")) else np.nan
 
@@ -1772,23 +1774,18 @@ else:
         _xgd_s = (_xg_s - _xga_s).dropna()
         _xgd_pct = float(np.clip((_xgd_s < _xgd_v).mean()*100 + (_xgd_s == _xgd_v).mean()*50, 0, 100)) if not _xgd_s.empty else 0.0
         _xgd_str = f"{_xgd_v:+.2f}" if _xgd_v != 0 else "0.00"
-        _OP_PERF.append(("xGD", _xgd_pct, _xgd_str))  # label = "xGD", value = p90 differential
+        _OP_PERF.append(("xGD", _xgd_pct, _xgd_str))
 
     if _op_fp_pct is not None:
         _fp_rank_disp = int(round(_op_fp_rank)) if _op_use_fp else 1
         _OP_PERF.append(("£ Performance", float(_op_fp_pct), str(_fp_rank_disp)))
 
-    # ── Performance section labels: full words ──
-    # Attack / Defence / Possession as full-word triples for the panel
     _OP_PERF_SCORES = [
         ("Attack",     _op_pct("xG p90") * 0.5 + _op_pct("Goals p90") * 0.5,    str(int(round(_op_att)))),
         ("Defence",    _op_pct("xG Against p90", invert=True),                   str(int(round(_op_def)))),
         ("Possession", _op_pct("Possession %"),                                   str(int(round(_op_pos)))),
     ]
 
-    # ════════════════════════════════════════════════════════════
-    # FIGURE CONSTANTS
-    # ════════════════════════════════════════════════════════════
     PAGE_BG   = "#0a0f1c"
     PANEL_BG  = "#11161C"
     TRACK_BG  = "#222c3d"
@@ -1818,11 +1815,9 @@ else:
         if v>=25: return "#D77A2E","#fff"
         return "#C63733","#fff"
 
-    # League position colour scale: 1st = deep green, last = deep red
     def _lp_rc(pos, total):
-        """Return (bg, fg) for a league position badge."""
         if total <= 1: return "#2E6114", "#fff"
-        frac = (pos - 1) / (total - 1)   # 0 = 1st, 1 = last
+        frac = (pos - 1) / (total - 1)
         if frac <= 0.10: return "#2E6114", "#fff"
         if frac <= 0.25: return "#5C9E2E", "#fff"
         if frac <= 0.45: return "#7FBC41", "#000"
@@ -1917,7 +1912,6 @@ else:
         ax.plot([0,1],[1,1],transform=ax.transAxes,color="#94A3B8",lw=0.8,alpha=0.35)
         return bottom
 
-    # ── figure height ──
     _n_chip_r=sum([bool(_op_styles),bool(_op_strengths),bool(_op_weaknesses)])
     _left_rows=len(_OP_ATT)+len(_OP_DEF)+3
     _right_rows=len(_OP_POS)+len(_OP_PERF)+4
@@ -1927,9 +1921,6 @@ else:
     _fig=plt.figure(figsize=(_FIG_W/100,_FIG_H/100),dpi=100)
     _fig.patch.set_facecolor(PAGE_BG)
 
-    # ══════════════════════════════════════════════════════
-    # HEADER
-    # ══════════════════════════════════════════════════════
     _PW=0.10; _PH=100/_FIG_H; _PX=0.050; _PY=1.0-_PH-14/_FIG_H
 
     _op_badge=get_team_badge(_op_team)
@@ -1955,16 +1946,13 @@ else:
 
     _NYC = _crest_mid_y
 
-    # ── OVR badge OR League Position badge ──
     _BSCALE=1.28; _bh=_nh*_BSCALE; _bw=_bh
     _bx=_NX+_nw+0.012; _by=_NYC-_bh/2
 
     if _op_use_leagpos:
-        # League position badge — colour by position
         _badge_bg, _badge_fg = _lp_rc(_op_leagpos, _op_leagn)
         _badge_label = str(int(_op_leagpos))
     else:
-        # Standard OVR badge
         _badge_bg, _badge_fg = _rc(_op_ovr)
         _badge_label = str(int(round(_op_ovr)))
 
@@ -1976,7 +1964,6 @@ else:
               fontsize=18.6*_BSCALE,color=_badge_fg,
               va="center",ha="center",fontweight="900")
 
-    # ── league logo ──
     _CW=0.048; _CH=48/_FIG_H
     _CX=_bx+_bw+0.016; _CY=_NYC-_CH/2
     _crest_drawn=False
@@ -1988,14 +1975,12 @@ else:
             _axlg.imshow(_lg_img); _axlg.axis("off")
             _crest_drawn=True
 
-    # ── style tag (toggle) ──
     if _op_show_style:
         _lx=(_CX+_CW+0.014) if _crest_drawn else (_bx+_bw+0.014)
         _fig.text(min(_lx,0.975),_NYC,_display_style,
                   color="#9CA3AF",fontsize=_nfs*0.58,
                   fontweight="700",va="center",ha="left")
 
-    # ── meta line — pipe-separated, with optional coach ──
     _info_parts=[
         _display_league,
         f"Games: {_opv('Matches')}",
@@ -2012,7 +1997,7 @@ else:
 
     _meta_y = _PY - 12/_FIG_H
     _meta_t = _fig.text(0.055, _meta_y,
-                        "  |  ".join(_info_parts),   # ← pipe separator
+                        "  |  ".join(_info_parts),
                         color="#FFFFFF", fontsize=13, ha="left", va="top")
 
     _fig.canvas.draw()
@@ -2023,12 +2008,10 @@ else:
     else:
         _mh = 13*1.4/_FIG_H
 
-    # ── ATT / DEF / POS score chips (full labels) ──
     _y_roles=_meta_y - _mh - 18/_FIG_H
     _x_role=0.055; _pad_r=0.006; _pad_ry=0.003; _r_fs=10.6
     _r_h=_th(_fig,"Hg",fontsize=_r_fs,weight="900")+_pad_ry*2
 
-    # Full-word labels
     for _rlb, _rv in [("ATT", _op_att), ("DEF", _op_def), ("POS", _op_pos)]:
         _lw=_tw(_fig,_rlb,fontsize=_r_fs,weight="900")+_pad_r*2
         _nw2=_tw(_fig,str(int(round(_rv))),fontsize=_r_fs,weight="900")+_pad_r*1.8
@@ -2049,16 +2032,12 @@ else:
                   fontsize=_r_fs,color="#FFFFFF",va="center",ha="center",fontweight="900")
         _x_role+=_nw2+0.020
 
-    # ── chip rows: styles / strengths / weaknesses ──
     _yc=_y_roles-_r_h-16/_FIG_H
     _yc=_chip_row(_fig,_op_styles,    _yc,CHIP_B,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_strengths, _yc,CHIP_G,fs=10.1,max_rows=2)
     _yc=_chip_row(_fig,_op_weaknesses,_yc,CHIP_R,fs=10.1,max_rows=2)
     _yc-=6/_FIG_H
 
-    # ══════════════════════════════════════════════════════
-    # BAR PANELS — 2-col layout
-    # ══════════════════════════════════════════════════════
     _L=0.050; _WL=0.41; _MG=0.040; _R=_L+_WL+_MG; _WR=0.41
     _TOP=_yc-0.020; _VG=0.050
 
@@ -2075,7 +2054,6 @@ else:
         _ = _bar_panel(_fig,_R,_pb-_VG, _WR,_OP_PERF,"Performance",
                        forced_gutter=_shared_gutter)
 
-    # ── render ──
     st.pyplot(_fig,use_container_width=True)
     _buf=io.BytesIO()
     _fig.savefig(_buf,format="png",dpi=170,
@@ -2088,7 +2066,6 @@ else:
 
 st.markdown("---")
 
-# ══════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════
 # SECTION 6 – LEADERBOARD
 # ══════════════════════════════════════════════════════
@@ -2105,7 +2082,6 @@ with st.expander("Leaderboard settings", expanded=False):
                                format_func=mlabel, key="ts_lb_metric")
     lb_n        = st.slider("Top N", 5, 40, 20, 5, key="ts_lb_n")
 
-    # League pool — default to selected team's league
     _lb_all_leagues = sorted(df["League"].dropna().unique().tolist())
     _lb_league_default = [team_league] if team_league in _lb_all_leagues else _lb_all_leagues[:1]
     lb_leagues  = st.multiselect("League pool", _lb_all_leagues,
@@ -2131,7 +2107,6 @@ with st.expander("Leaderboard settings", expanded=False):
     lb_custom_title= st.text_input("Custom title", f"Top N – {mlabel(lb_metric)}", key="ts_lb_custom_title")
     lb_highlight   = st.selectbox("Highlight team", ["(None)"] + team_options, key="ts_lb_highlight")
 
-# ── theme colours ──
 if lb_theme == "Light":
     _LB_PBG="#ebebeb"; _LB_ABG="#ebebeb"; _LB_TXT="#111111"
     _LB_GRID="#d7d7d7"; _LB_SPINE="#c8c8c8"; _LB_TICK="#111111"
@@ -2139,7 +2114,6 @@ else:
     _LB_PBG="#0a0f1c"; _LB_ABG="#0a0f1c"; _LB_TXT="#f5f5f5"
     _LB_GRID="#3a4050"; _LB_SPINE="#6b7280"; _LB_TICK="#ffffff"
 
-# ── data ──
 if lb_metric not in df.columns:
     st.info("Metric not available.")
 else:
@@ -2156,7 +2130,6 @@ else:
         _ts = (_lb_vals - _vmin) / (_vmax - _vmin)
     else:
         _ts = np.zeros(len(_lb_vals))
-    # For inverted metrics (lower=better), flip so the lowest bar gets the "best" colour
     if lb_metric in INVERT_METRICS: _ts = 1.0 - _ts
     if lb_rev: _ts = 1.0 - _ts
 
@@ -2187,7 +2160,6 @@ else:
     _ypos = np.arange(len(_lb_vals))
     _bars = ax_lb.barh(_ypos, _lb_vals, color=_lb_colors, edgecolor="none", zorder=2)
 
-    # Highlight selected team
     if lb_highlight != "(None)":
         for _bi, (_br, _brow) in enumerate(zip(_bars, _lb_df.itertuples())):
             if _brow.Team == lb_highlight:
@@ -2256,7 +2228,6 @@ with st.expander("Scatter settings", expanded=False):
     sc_colour_metric = st.selectbox("Colour dots by", _sc_num_cols,
                                     index=_sc_num_cols.index(_sc_x_def), format_func=mlabel, key="ts_sc_colour")
 
-    # League pool — default to selected team's league
     _sc_all_leagues = sorted(df["League"].dropna().unique().tolist())
     _sc_league_default = [team_league] if team_league in _sc_all_leagues else _sc_all_leagues[:1]
     sc_leagues = st.multiselect("League pool", _sc_all_leagues,
@@ -2286,13 +2257,10 @@ with st.expander("Scatter settings", expanded=False):
     sc_custom_title = st.text_input("Custom title", f"{mlabel(sc_x)} vs {mlabel(sc_y)}", key="ts_sc_title")
     sc_top_gap      = st.slider("Top gap (px)", 0, 240, 80, 5, key="ts_sc_topgap")
     sc_render_exact = st.checkbox("Render exact pixels (PNG)", True, key="ts_sc_exact")
-
-    # Include selected team (from Team Profile)
     sc_include_sel  = st.toggle(f"Highlight selected team ({sel_team})", True, key="ts_sc_incl_sel")
 
 _sc_w, _sc_h = map(int, sc_canvas.replace("×","x").replace(" ","").split("x"))
 
-# ── theme ──
 _SC_PBG  = "#ebebeb" if sc_theme=="Light" else "#0a0f1c"
 _SC_ABG  = "#f3f3f3" if sc_theme=="Light" else "#0f151f"
 _SC_GRID = "#d7d7d7" if sc_theme=="Light" else "#3a4050"
@@ -2364,18 +2332,15 @@ else:
         ax_sc.set_facecolor(_SC_ABG)
         ax_sc.set_xlim(*_xlim); ax_sc.set_ylim(*_ylim)
 
-        # All other teams
         ax_sc.scatter(_others[sc_x], _others[sc_y], s=sc_point_size,
                       c=list(_col_s.loc[_others.index]), alpha=float(sc_alpha),
                       edgecolors="none", marker=sc_marker, zorder=2)
 
-        # Selected team (red outlined)
         if not _sel_df.empty:
             ax_sc.scatter(_sel_df[sc_x], _sel_df[sc_y], s=sc_point_size,
                           c="#C81E1E", edgecolors="white", linewidths=1.8,
                           marker=sc_marker, zorder=4)
 
-        # Highlighted team (amber)
         if sc_hl_team != "(None)":
             _hl = _sc_df[_sc_df["Team"] == sc_hl_team]
             if not _hl.empty:
@@ -2383,7 +2348,6 @@ else:
                               c="#f59e0b", edgecolors="white", linewidths=1.6,
                               marker=sc_marker, zorder=5)
 
-        # IQR shading
         if sc_shade_iqr:
             _xq1,_xq3 = np.nanpercentile(_x_vals,[25,75])
             _yq1,_yq3 = np.nanpercentile(_y_vals,[25,75])
@@ -2391,17 +2355,14 @@ else:
             ax_sc.axvspan(_xq1,_xq3,color=_iqr_c,alpha=0.25,zorder=1)
             ax_sc.axhspan(_yq1,_yq3,color=_iqr_c,alpha=0.25,zorder=1)
 
-        # Medians
         if sc_show_medians:
             _mc2 = "#000000" if sc_theme=="Light" else "#ffffff"
             ax_sc.axvline(float(np.nanmedian(_x_vals)),color=_mc2,ls=(0,(4,4)),lw=2.2,zorder=3)
             ax_sc.axhline(float(np.nanmedian(_y_vals)),color=_mc2,ls=(0,(4,4)),lw=2.2,zorder=3)
 
-        # Axes
         ax_sc.set_xlabel(mlabel(sc_x), fontsize=15, fontweight="semibold", color=_SC_TXT)
         ax_sc.set_ylabel(mlabel(sc_y), fontsize=15, fontweight="semibold", color=_SC_TXT)
 
-        # Invert axis direction for metrics where lower = better
         if sc_x in INVERT_METRICS: ax_sc.invert_xaxis()
         if sc_y in INVERT_METRICS: ax_sc.invert_yaxis()
 
@@ -2423,18 +2384,15 @@ else:
             _s.set_linewidth(0.9)
             _s.set_color("#9ca3af" if sc_theme=="Light" else "#6b7280")
 
-        # Top gap
         _tgap_px = 75 if sc_show_title else sc_top_gap
         _top_frac = 1.0 - (_tgap_px / float(_sc_h))
         fig_sc.subplots_adjust(left=0.075, right=0.985, bottom=0.105, top=_top_frac)
 
-        # Custom title
         if sc_show_title and sc_custom_title.strip():
             _tc = "#111111" if sc_theme=="Light" else "#f5f5f5"
             fig_sc.text(0.5, _top_frac+(1-_top_frac)*0.44, sc_custom_title.strip(),
                         ha="center", va="center", color=_tc, fontsize=26, fontweight="semibold")
 
-        # Labels
         if sc_show_labels:
             for _, _lr in _sc_df.iterrows():
                 _lab = ax_sc.annotate(
@@ -2477,7 +2435,6 @@ RADAR_COMP_METRICS = [
     "Long Passes p90","Points p90","Expected Points p90",
 ]
 
-# Compute per-game versions of Points & xPoints if raw columns exist
 for _src, _dst in [("Points","Points p90"),("Expected Points","Expected Points p90")]:
     if _src in df.columns and "Matches" in df.columns and _dst not in df.columns:
         _matches = pd.to_numeric(df["Matches"], errors="coerce").replace(0, np.nan)
@@ -2487,10 +2444,8 @@ for _src, _dst in [("Points","Points p90"),("Expected Points","Expected Points p
 
 radar_comp_avail = [m for m in RADAR_COMP_METRICS if m in df.columns]
 
-# Team A is always the selected team — shown as read-only info
 st.info(f"**Team A (red):** {sel_team}  —  {team_league}")
 
-# Team B defaults to a team from the same league, selectable
 _comp_b_same_league = [t for t in team_options if t != sel_team and team_league_map.get(t,"") == team_league]
 _comp_b_other       = [t for t in team_options if t != sel_team and team_league_map.get(t,"") != team_league]
 _comp_b_opts        = _comp_b_same_league + _comp_b_other
@@ -2510,7 +2465,6 @@ with st.expander("Radar settings", expanded=False):
     comp_league_b_label = st.text_input("Edit Team B league", _comp_b_league,
                                         key=f"ts_comp_league_b_{sel_team}_{comp_team_b_sel}")
 
-# Theme colours (matching player radar exactly)
 if comp_theme == "Dark":
     _CR_PBG="#0a0f1c"; _CR_AX="#0a0f1c"
     _CR_BAND_OUT="#162235"; _CR_BAND_IN="#0d1524"
@@ -2542,7 +2496,6 @@ if row_a is not None and row_b is not None and radar_comp_avail:
         except: return 50.0
         if pd.isna(v) or s.empty: return 50.0
         p = (s < v).mean()*100 + (s == v).mean()*50
-        # For inverted metrics: lower raw value = higher percentile (better)
         return float(np.clip(100 - p if inv else p, 0, 100))
 
     def _actual_val(t_row, col):
@@ -2568,14 +2521,12 @@ if row_a is not None and row_b is not None and radar_comp_avail:
     _FILL_A=(200/255,30/255,30/255,0.60); _FILL_B=(29/255,78/255,216/255,0.60)
     _INNER=10; _RING_LW=1.0; _OUTER_R=107
 
-    # Ring tick labels: for INVERTED metrics show descending values outward
-    # (outer ring = lowest raw value = best performance)
     _qs = np.linspace(0, 100, 11)
     _axis_ticks = []
     for _m in radar_comp_avail:
         _vals = np.nanpercentile(_pool_ab[_m].dropna().values, _qs)
         if _m in INVERT_METRICS:
-            _vals = _vals[::-1]  # flip: outer ring shows lowest (best) value
+            _vals = _vals[::-1]
         _axis_ticks.append(_vals)
 
     fig_c = plt.figure(figsize=(13.2, 8.0), dpi=260)
@@ -2587,7 +2538,6 @@ if row_a is not None and row_b is not None and radar_comp_avail:
     ax_c.set_yticks([]); ax_c.grid(False)
     for _s in ax_c.spines.values(): _s.set_visible(False)
 
-    # Alternating radial bands
     _ring_edges = np.linspace(_INNER, 100, 11)
     for _i in range(10):
         _r0,_r1 = _ring_edges[_i], _ring_edges[_i+1]
@@ -2595,20 +2545,17 @@ if row_a is not None and row_b is not None and radar_comp_avail:
         ax_c.add_artist(mpatches.Wedge((0,0),_r1,0,360,width=(_r1-_r0),
             transform=ax_c.transData._b,facecolor=_band,edgecolor="none",zorder=0.8))
 
-    # Ring outlines
     _ring_t = np.linspace(0, 2*np.pi, 361)
     for _j, _r in enumerate(_ring_edges):
         _rc = _CR_RING_OUT if _j==len(_ring_edges)-1 else _CR_RING_IN
         ax_c.plot(_ring_t, np.full_like(_ring_t,_r), color=_rc, lw=_RING_LW, zorder=0.9)
 
-    # Actual value tick labels at each ring (decile values from pool)
     for _i, _ang in enumerate(_theta_c):
         _tv = _axis_ticks[_i]
         for _rr, _v in zip(_ring_edges[2:], _tv[2:]):
             ax_c.text(_ang, _rr-1.8, f"{float(_v):.1f}",
                       ha="center", va="center", fontsize=7, color=_CR_TICK, zorder=1.1)
 
-    # Outer metric labels (upright, centered)
     for _ang, _lab in zip(_theta_c, _labels_c):
         _rot = np.degrees(ax_c.get_theta_direction()*_ang + ax_c.get_theta_offset()) - 90.0
         _rn  = ((_rot+180)%360)-180
@@ -2617,26 +2564,19 @@ if row_a is not None and row_b is not None and radar_comp_avail:
                   ha="center", va="center", fontsize=9, color=_CR_LABEL,
                   fontweight=600, clip_on=False, zorder=2.2)
 
-    # Center hole
     ax_c.add_artist(plt.Circle((0,0), radius=_INNER-0.6, transform=ax_c.transData._b,
                                color=_CR_PBG, zorder=1.2, ec="none"))
 
-    # Polygons
     ax_c.plot(_theta_cc, _Ar_c, color=_COL_A, lw=2.2, zorder=3)
     ax_c.fill(_theta_cc, _Ar_c, color=_FILL_A, zorder=2.5)
     ax_c.plot(_theta_cc, _Br_c, color=_COL_B, lw=2.2, zorder=3)
     ax_c.fill(_theta_cc, _Br_c, color=_FILL_B, zorder=2.5)
     ax_c.set_rlim(0, 100)
 
-    # Actual value dots on each team's polygon
     for _i, (_ang, _av_a, _av_b) in enumerate(zip(_theta_c, A_actual, B_actual)):
         _pa = A_r[_i]; _pb = B_r[_i]
         ax_c.plot(_ang, _pa, 'o', color=_COL_A, markersize=4, zorder=4)
         ax_c.plot(_ang, _pb, 'o', color=_COL_B, markersize=4, zorder=4)
-
-    # Headers (editable labels)
-    _sub_a = str(row_a["League"]) if "League" in row_a.index else ""
-    _sub_b = str(row_b["League"]) if "League" in row_b.index else ""
 
     fig_c.text(0.12, 0.96,  comp_team_a_label, color=_COL_A, fontsize=22, fontweight="bold", ha="left")
     fig_c.text(0.12, 0.935, comp_league_a_label, color=_COL_A, fontsize=11, ha="left")
@@ -2666,7 +2606,6 @@ st.markdown("---")
 st.subheader("🧭 Similar Teams")
 st.markdown("---")
 
-# ── Feature basket with default weights ──
 SIM_TEAM_FEATURES = [
     ("Crosses p90",               1),
     ("Goals p90",                 1),
@@ -2684,7 +2623,6 @@ SIM_TEAM_FEATURES = [
     ("Progressive Passes p90",    1),
 ]
 
-# Only keep features that exist in the dataset
 SIM_TEAM_AVAIL = [(f, w) for f, w in SIM_TEAM_FEATURES if f in df.columns]
 SIM_TEAM_COLS  = [f for f, _ in SIM_TEAM_AVAIL]
 SIM_TEAM_W_DEF = {f: w for f, w in SIM_TEAM_AVAIL}
@@ -2706,7 +2644,6 @@ with st.expander("Similar Teams settings", expanded=False):
             _wk = "ts_simw_" + _f.replace(" ","_").replace("%","pct").replace(",","").replace(".","_")
             st_adv_weights[_f] = st.slider(f"{mlabel(_f)}", 1, 5, _wd, key=_wk)
 
-# ── Computation ──
 _sim_target_rows = df[df["Team"] == sel_team]
 if _sim_target_rows.empty or not SIM_TEAM_COLS:
     st.info("Select a team above and ensure metric columns are present.")
@@ -2717,7 +2654,6 @@ else:
         _sim_target     = _sim_target_rows.iloc[0]
         _sim_tgt_league = str(_sim_target["League"]) if "League" in _sim_target.index else ""
 
-        # ── Build full pool (target league always included for ranking) ──
         _st_leagues_full = list(set(list(st_leagues) + [_sim_tgt_league])) if st_leagues else None
         _st_pool_all = df[df["League"].isin(_st_leagues_full)].copy() if _st_leagues_full else df.copy()
         for _f in SIM_TEAM_COLS:
@@ -2727,21 +2663,18 @@ else:
         if _st_pool_all.empty:
             st.info("No teams after filters.")
         else:
-            # ── Weights: normalise so they sum to 1 ──
             _weights_vec = np.array(
                 [float(st_adv_weights.get(_f, SIM_TEAM_W_DEF.get(_f, 1))) for _f in SIM_TEAM_COLS],
                 dtype=float
             )
             _weights_vec = _weights_vec / _weights_vec.sum()
 
-            # ── Per-league percentile ranks (0–1) — each team ranked within its own league ──
             _pct_df = _st_pool_all.groupby("League")[SIM_TEAM_COLS].rank(pct=True)
 
             _tgt_mask = _st_pool_all["Team"] == sel_team
-            _tgt_pct  = _pct_df.loc[_tgt_mask].mean(axis=0).values  # (n_features,)
+            _tgt_pct  = _pct_df.loc[_tgt_mask].mean(axis=0).values
 
             _cand_mask = ~_tgt_mask
-            # Restrict candidates to selected leagues (not target's league if not chosen)
             if st_leagues:
                 _cand_mask = _cand_mask & _st_pool_all["League"].isin(st_leagues)
             _cand_df  = _st_pool_all[_cand_mask].reset_index(drop=True)
@@ -2750,30 +2683,18 @@ else:
             if _cand_df.empty:
                 st.info("No candidate teams in selected leagues.")
             else:
-                # ── Weighted Manhattan on per-league percentiles ──
-                # Each |Δpct| in [0,1]; weighted sum in [0,1]; no squaring → no weight amplification
                 _pct_dist = np.sum(np.abs(_cand_pct - _tgt_pct) * _weights_vec, axis=1)
-                # Exponential decay: sim=100 at dist=0, sim≈25 at dist=0.5, sim≈6 at dist=1.0
                 _sims_pct = np.exp(-2.8 * _pct_dist) * 100.0
 
-                # ── Weighted Manhattan on z-scored actual values ──
-                # StandardScaler on full pool: fixes xG(1.2) vs Passes(500) skew
                 _scaler   = _STScaler()
                 _all_std  = _scaler.fit_transform(_st_pool_all[SIM_TEAM_COLS])
                 _tgt_std  = _all_std[_tgt_mask.values].mean(axis=0)
                 _cand_std = _all_std[_st_pool_all[_cand_mask].index]
-                # Weighted mean absolute z-score difference per team
                 _act_dist = np.sum(np.abs(_cand_std - _tgt_std) * _weights_vec, axis=1)
-                # Typical dist between similar teams ≈ 0.3–0.8; decay tuned accordingly
                 _sims_act = np.exp(-0.6 * _act_dist) * 100.0
 
-                # ── Final: 50/50 blend of both signals ──
                 _sims = ((_sims_pct * 0.5) + (_sims_act * 0.5)).round(1)
 
-                # ── Optional league strength adjustment (β=0.4) ──
-                # Penalises/rewards similarity based on how close league strengths are.
-                # ratio = min(ls_a, ls_b) / max(ls_a, ls_b) ∈ (0,1]; 1 = same strength
-                # adjusted = sim × ((1−β) + β × ratio)  →  max penalty 40% for very different leagues
                 if st_use_ls_adj:
                     _beta = 0.4
                     _tgt_ls = float(LEAGUE_STRENGTHS.get(str(_sim_tgt_league).strip(), 50.0))
@@ -2785,11 +2706,9 @@ else:
                     _ratio = np.minimum(_cand_ls, _tgt_ls) / (np.maximum(_cand_ls, _tgt_ls) + _eps)
                     _sims = (_sims * ((1 - _beta) + _beta * _ratio)).round(1)
 
-                # ── Output table: merge actual values from df so they survive sort ──
                 _out = _cand_df[["Team", "League"]].copy().reset_index(drop=True)
                 _out["Similarity"] = _sims
 
-                # Pull actual values from source df (correct, not positionally misaligned)
                 _ctx_cols = ["xG p90", "xG Against p90", "PPDA", "Possession %", "Passes p90"]
                 _ctx_avail = [c for c in _ctx_cols if c in df.columns]
                 _ctx_src = df[["Team", "League"] + _ctx_avail].copy()
@@ -2798,7 +2717,6 @@ else:
                 _out = _out.merge(_ctx_src, on=["Team", "League"], how="left")
                 _out = _out.rename(columns={c: mlabel(c) for c in _ctx_avail})
 
-                # Now sort
                 _out = _out.sort_values("Similarity", ascending=False).reset_index(drop=True)
                 _out.insert(0, "Rank", np.arange(1, len(_out) + 1))
 
