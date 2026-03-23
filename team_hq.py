@@ -330,7 +330,7 @@ if df.empty:
 # ─────────────────────────────────────────────
 
 def pct_rank(series: pd.Series, invert: bool = False) -> pd.Series:
-    r = series.rank(pct=True) * 100
+    r = series.rank(pct=True, method='max') * 100
     return 100 - r if invert else r
 
 for col in NUMERIC_COLS:
@@ -1125,7 +1125,7 @@ else:
         s = pd.to_numeric(pool_df[col], errors="coerce").dropna()
         v = float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 50.0
-        p = (s < v).mean()*100 + (s==v).mean()*50
+        p = (s <= v).mean() * 100
         return (100-p) if invert else p
 
     pcts = [team_pct(team_row, pool, m, m in INVERT_METRICS) for m in radar_metrics]
@@ -1336,7 +1336,7 @@ else:
         s = pd.to_numeric(pool_f[col], errors="coerce").dropna()
         v = float(t_row_f[col]) if pd.notna(t_row_f.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 0.0
-        p = (s<v).mean()*100 + (s==v).mean()*50
+        p = (s <= v).mean() * 100
         return float(np.clip((100-p) if invert else p, 0, 100))
 
     def val_f(col):
@@ -1494,7 +1494,7 @@ else:
         s = pd.to_numeric(pool_y[col], errors="coerce").dropna()
         v = float(t_row_y[col]) if pd.notna(t_row_y.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 50
-        p = (s<v).mean()*100 + (s==v).mean()*50
+        p = (s <= v).mean() * 100
         return float(np.clip((100-p) if inv else p, 0, 100))
 
     pcts_y = [pct_y(m) for m in metrics_y]
@@ -1616,7 +1616,7 @@ else:
         s = pd.to_numeric(_op_pool[col], errors="coerce").dropna()
         v = float(_op_r[col]) if pd.notna(_op_r.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 0.0
-        p = (s < v).mean()*100 + (s == v).mean()*50
+        p = (s <= v).mean() * 100
         return float(np.clip((100-p) if invert else p, 0, 100))
 
     _p_poss  = _op_pct("Possession %")
@@ -1751,7 +1751,7 @@ else:
 
     def _rate_pct(val, series):
         if pd.isna(val) or series.empty: return 0.0
-        return float(np.clip((series<val).mean()*100+(series==val).mean()*50, 0, 100))
+        return float(np.clip((series <= val).mean() * 100, 0, 100))
 
     _ppg_s    = _pool_rate_pct("Points",          "Matches")
     _xppg_s   = _pool_rate_pct("Expected Points",  "Matches")
@@ -1772,7 +1772,7 @@ else:
         _xg_s  = pd.to_numeric(_op_pool.get("xG p90",         pd.Series(dtype=float)), errors="coerce")
         _xga_s = pd.to_numeric(_op_pool.get("xG Against p90", pd.Series(dtype=float)), errors="coerce")
         _xgd_s = (_xg_s - _xga_s).dropna()
-        _xgd_pct = float(np.clip((_xgd_s < _xgd_v).mean()*100 + (_xgd_s == _xgd_v).mean()*50, 0, 100)) if not _xgd_s.empty else 0.0
+        _xgd_pct = float(np.clip((_xgd_s <= _xgd_v).mean() * 100, 0, 100)) if not _xgd_s.empty else 0.0
         _xgd_str = f"{_xgd_v:+.2f}" if _xgd_v != 0 else "0.00"
         _OP_PERF.append(("xGD", _xgd_pct, _xgd_str))
 
@@ -2495,7 +2495,7 @@ if row_a is not None and row_b is not None and radar_comp_avail:
         try: v = float(t_row[col])
         except: return 50.0
         if pd.isna(v) or s.empty: return 50.0
-        p = (s < v).mean()*100 + (s == v).mean()*50
+        p = (s <= v).mean() * 100
         return float(np.clip(100 - p if inv else p, 0, 100))
 
     def _actual_val(t_row, col):
