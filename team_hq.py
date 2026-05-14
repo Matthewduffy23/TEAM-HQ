@@ -2628,8 +2628,11 @@ SIM_TEAM_COLS  = [f for f, _ in SIM_TEAM_AVAIL]
 SIM_TEAM_W_DEF = {f: w for f, w in SIM_TEAM_AVAIL}
 
 with st.expander("Similar Teams settings", expanded=False):
-    _st_all_leagues = sorted(df["League"].dropna().unique().tolist())
-    _st_league_default = [team_league] if team_league in _st_all_leagues else _st_all_leagues[:1]
+    _st_all_leagues = sorted(df_raw["League"].dropna().unique().tolist())
+    # Default pool = whatever the sidebar leagues filter is currently set to
+    _st_league_default = [lg for lg in leagues_sel if lg in _st_all_leagues] or (
+        [team_league] if team_league in _st_all_leagues else _st_all_leagues[:1]
+    )
     st_leagues = st.multiselect(
         "Candidate league pool", _st_all_leagues,
         default=_st_league_default,
@@ -2655,7 +2658,11 @@ else:
         _sim_tgt_league = str(_sim_target["League"]) if "League" in _sim_target.index else ""
 
         _st_leagues_full = list(set(list(st_leagues) + [_sim_tgt_league])) if st_leagues else None
-        _st_pool_all = df[df["League"].isin(_st_leagues_full)].copy() if _st_leagues_full else df.copy()
+        # Use df_raw (full dataset) so the expander leagues are the actual pool, not further restricted
+        _src_df = df_raw.copy()
+        if "Matches" in _src_df.columns:
+            _src_df = _src_df[pd.to_numeric(_src_df["Matches"], errors="coerce").fillna(0) >= min_matches]
+        _st_pool_all = _src_df[_src_df["League"].isin(_st_leagues_full)].copy() if _st_leagues_full else _src_df.copy()
         for _f in SIM_TEAM_COLS:
             _st_pool_all[_f] = pd.to_numeric(_st_pool_all[_f], errors="coerce")
         _st_pool_all = _st_pool_all.dropna(subset=SIM_TEAM_COLS).reset_index(drop=True)
@@ -2755,6 +2762,48 @@ else:
                     _styled.format(_fmt_dict).hide(axis="index"),
                     use_container_width=True
                 )
+
+                # ── Similar Teams Ranking Image ──
+                st.markdown("---")
+                st.subheader("🖼️ Similar Teams Ranking Image")
+
+                with st.expander("Similar Teams Ranking Image settings", expanded=True):
+                    _stri_c1, _stri_c2 = st.columns(2)
+                    stri_theme   = _stri_c1.radio("Theme",   ["Light", "Dark"], horizontal=True, key="stri_theme")
+                    stri_export  = _stri_c2.selectbox("Export format", ["Standard (auto)", "1920×1080 (banner)"], key="stri_export")
+                    stri_top_n   = st.number_input("Top N similar teams", 3, 20, min(10, int(st_top_n)), key="stri_top_n")
+                    stri_t1      = st.text_input("Title line 1", "SIMILAR TEAMS",            key="stri_t1")
+                    stri_t2      = st.text_input("Title line 2", sel_team.upper(),            key="stri_t2")
+                    stri_t3      = st.text_input("Title line 3", "Similarity Index  |  Wyscout", key="stri_t3")
+                    _stri_team_opts = sorted(_out["Team"].dropna().unique().tolist())
+                    stri_highlight_team = st.selectbox(
+                        "Highlight team (gold overlay)",
+                        ["(None)"] + _stri_team_opts,
+                        key="stri_highlight_team"
+                    )
+
+                # Build a df compatible with _tri_make_image:
+                # needs _tri_val column (similarity score) + Team + League
+                _stri_df = _out.head(int(stri_top_n)).copy()
+                _stri_df["_tri_val"] = pd.to_numeric(_stri_df["Similarity"], errors="coerce")
+                _stri_df = _stri_df.dropna(subset=["_tri_val"])
+                _stri_highlight = stri_highlight_team if stri_highlight_team != "(None)" else None
+
+                _stri_img = _tri_make_image(
+                    _stri_df, "Similarity", "Similarity", "Similarity", False,
+                    [stri_t1, stri_t2, stri_t3],
+                    stri_theme, stri_export, int(stri_top_n),
+                    highlight_team=_stri_highlight,
+                )
+                if _stri_img:
+                    st.image(_stri_img, use_column_width=True)
+                    st.download_button(
+                        "⬇️ Download Similar Teams Image", _stri_img,
+                        f"similar_teams_{sel_team.replace(' ','_')}.png", "image/png",
+                        key="stri_download"
+                    )
+                else:
+                    st.info("No similar teams data to render.")
 
     except ImportError:
         st.warning("scikit-learn is required. Run: `pip install scikit-learn`")
