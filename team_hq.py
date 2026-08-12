@@ -334,8 +334,21 @@ if df.empty:
 # ─────────────────────────────────────────────
 
 def pct_rank(series: pd.Series, invert: bool = False) -> pd.Series:
-    r = series.rank(pct=True, method='max') * 100
-    return 100 - r if invert else r
+    # Two deliberate choices, both changed 2026-08-12 so that Team HQ, Scout Index's
+    # Team Index, the player card and Railway produce identical numbers:
+    #
+    # method='average' (pandas' default), NOT 'max'. 'max' awards every tied team the
+    # BEST rank in its tie group, systematically inflating scores wherever values repeat.
+    #
+    # ascending=not invert, NOT the old "100 - r". Complementing an ascending rank is
+    # off by one position versus reversing the sort order, so the two differ by exactly
+    # 100/n — 5 points in a 20-team league, on EVERY inverted metric.
+    #
+    # The groupby("League") below is left as-is and is CORRECT here: this app loads a
+    # single per-season WORLDTEAMS*.csv (see :39-44), so grouping by league alone is
+    # already league+season. build_teams.py reads the all-seasons master and needed an
+    # explicit ['League','Season'] to mean the same thing.
+    return series.rank(pct=True, method='average', ascending=not invert) * 100
 
 for col in NUMERIC_COLS:
     if col not in df.columns:
