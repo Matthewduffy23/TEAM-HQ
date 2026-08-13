@@ -36,7 +36,17 @@ def _read_csv_path(path: str) -> pd.DataFrame:
 # Team-only: filtered to WORLDTEAMS*.csv specifically — this app has no
 # validation if the wrong file type loads (no crash, but would silently
 # render player-level rows as if they were team-aggregate data).
-csv_candidates = sorted(Path.cwd().glob("WORLDTEAMS*.csv"), key=lambda c: c.stat().st_mtime, reverse=True)
+def _season_key(name):
+    """First 4-digit year anywhere in the filename: WORLDTEAMS2026-27.csv -> 2026.
+    Duplicated per repo rather than imported — these are separate repos with no
+    shared package. Mirrors season_utils.py in Scouting-Hub."""
+    m = re.search(r"(\d{4})", str(name))
+    return int(m.group(1)) if m else -1
+
+# Season from the filename, not st_mtime. mtime was inverted here: split_teams.py
+# writes seasons newest-first and copy2 preserves those timestamps, so
+# WORLDTEAMS2026-27.csv had the OLDEST mtime and this defaulted to 2021-22.
+csv_candidates = sorted(Path.cwd().glob("WORLDTEAMS*.csv"), key=lambda c: _season_key(c.name), reverse=True)
 
 if csv_candidates:
     _csv_names = [c.name for c in csv_candidates]
