@@ -1145,15 +1145,27 @@ else:
         "__fp__": fp_budget_label if use_fp else "£ Perf",
     }
 
+    # Own-league (default) comparison pool: read the SAME precomputed _pct_{col}
+    # column Pro Layout/Team Ranking use (built once by pct_rank(), grouped by
+    # League) instead of recomputing — guarantees this radar can't drift from
+    # those views for the common case. Only a genuinely custom, broader pool
+    # (comp_leagues set to something other than just the team's own league)
+    # falls back to a live recompute against that specific pool.
+    _profile_pool_is_own_league = (not comp_leagues) or (comp_leagues == [team_league])
+
     def team_pct(t_row, pool_df, col, invert=False):
         if col == "__fp__":
             return _fp_pct if use_fp else 50.0
+        if _profile_pool_is_own_league:
+            v = t_row.get(f"_pct_{col}", np.nan)
+            return float(v) if pd.notna(v) else 50.0
         if col not in pool_df.columns or col not in t_row.index: return 50.0
         s = pd.to_numeric(pool_df[col], errors="coerce").dropna()
         v = float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 50.0
-        p = (s <= v).mean() * 100
-        return (100-p) if invert else p
+        # Flip the comparison operator for invert, don't complement the result —
+        # 100-p is short by 100/n at both ends (best case lands on 100-100/n, not 100).
+        return (s >= v).mean() * 100 if invert else (s <= v).mean() * 100
 
     pcts = [team_pct(team_row, pool, m, m in INVERT_METRICS) for m in radar_metrics]
     labels_clean = [PROFILE_LABEL_OVERRIDE.get(m, mlabel(m)) for m in radar_metrics]
@@ -1359,12 +1371,12 @@ else:
     pool_f = df[df["League"] == t_league_f]
 
     def pct_f(col, invert=False):
+        # Feature F has no comparison-pool selector — pool_f is always the team's
+        # own league, so read the same precomputed _pct_{col} column Pro
+        # Layout/Team Ranking use rather than recomputing, guaranteeing agreement.
         if col not in df.columns: return 0.0
-        s = pd.to_numeric(pool_f[col], errors="coerce").dropna()
-        v = float(t_row_f[col]) if pd.notna(t_row_f.get(col)) else np.nan
-        if pd.isna(v) or s.empty: return 0.0
-        p = (s <= v).mean() * 100
-        return float(np.clip((100-p) if invert else p, 0, 100))
+        v = t_row_f.get(f"_pct_{col}", np.nan)
+        return float(v) if pd.notna(v) else 0.0
 
     def val_f(col):
         v = t_row_f.get(col, np.nan)
@@ -1501,6 +1513,10 @@ else:
         key=f"ts_y_comp_{sel_team_y}"
     )
     pool_y = df[df["League"].isin(comp_y)] if comp_y else df[df["League"]==t_league_y]
+    # Own-league (default) pool: read the same precomputed _pct_{col} column Pro
+    # Layout/Team Ranking use, rather than recomputing — guarantees agreement for
+    # the common case. Only falls back to a live recompute for a custom pool.
+    _feature_y_pool_is_own_league = (not comp_y) or (comp_y == [t_league_y])
 
     use_custom_title_y = st.checkbox("Add custom title", value=False, key="ts_y_custom_title_toggle")
     custom_title_y = ""
@@ -1516,13 +1532,18 @@ else:
     metrics_y = [m for m in METRICS_Y if m in df.columns]
 
     def pct_y(col):
+        if _feature_y_pool_is_own_league:
+            v = t_row_y.get(f"_pct_{col}", np.nan)
+            return float(v) if pd.notna(v) else 50
         inv = col in INVERT_METRICS
         if col not in pool_y.columns: return 50
         s = pd.to_numeric(pool_y[col], errors="coerce").dropna()
         v = float(t_row_y[col]) if pd.notna(t_row_y.get(col)) else np.nan
         if pd.isna(v) or s.empty: return 50
-        p = (s <= v).mean() * 100
-        return float(np.clip((100-p) if inv else p, 0, 100))
+        # Flip the comparison operator for invert, don't complement the result —
+        # 100-p is short by 100/n at both ends (best case lands on 100-100/n, not 100).
+        p = (s >= v).mean() * 100 if inv else (s <= v).mean() * 100
+        return float(np.clip(p, 0, 100))
 
     pcts_y = [pct_y(m) for m in metrics_y]
     labels_y = [mlabel(m) for m in metrics_y]
@@ -1639,12 +1660,12 @@ else:
         _op_custom_style = st.text_input("Override Style Tag (optional)", "", key="op_custom_style")
 
     def _op_pct(col, invert=False):
+        # No comparison-pool selector here either — _op_pool is always the team's
+        # own league, so read the same precomputed _pct_{col} column Pro
+        # Layout/Team Ranking use rather than recomputing, guaranteeing agreement.
         if col not in _op_pool.columns: return 0.0
-        s = pd.to_numeric(_op_pool[col], errors="coerce").dropna()
-        v = float(_op_r[col]) if pd.notna(_op_r.get(col)) else np.nan
-        if pd.isna(v) or s.empty: return 0.0
-        p = (s <= v).mean() * 100
-        return float(np.clip((100-p) if invert else p, 0, 100))
+        v = _op_r.get(f"_pct_{col}", np.nan)
+        return float(v) if pd.notna(v) else 0.0
 
     _p_poss  = _op_pct("Possession %")
     _p_ppda  = _op_pct("PPDA", invert=True)
