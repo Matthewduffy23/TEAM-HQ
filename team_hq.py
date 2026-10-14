@@ -47,17 +47,44 @@ def _season_key(name):
 # writes seasons newest-first and copy2 preserves those timestamps, so
 # WORLDTEAMS2026-27.csv had the OLDEST mtime and this defaulted to 2021-22.
 csv_candidates = sorted(Path.cwd().glob("WORLDTEAMS*.csv"), key=lambda c: _season_key(c.name), reverse=True)
+_csv_names = [c.name for c in csv_candidates]
 
-if csv_candidates:
-    _csv_names = [c.name for c in csv_candidates]
-    _csv_choice = st.selectbox("Team stats CSV:", _csv_names, index=0)
-    df_raw = _read_csv_path(str(Path.cwd() / _csv_choice))
-else:
-    up = st.file_uploader("Upload your team stats CSV", type=["csv"])
+_UPLOAD_KEY = "ts_csv_upload"
+_CHOICE_KEY = "ts_csv_choice"
+
+# Read any already-uploaded file from session_state BEFORE building the dropdown —
+# Streamlit populates a widget's session_state entry at the start of every rerun
+# (from the browser's current widget state), before the script reaches the line
+# that originally created it. That lets a file uploaded via the file_uploader
+# below be reflected in the dropdown built above it, in the same rerun.
+_uploaded = st.session_state.get(_UPLOAD_KEY)
+_uploaded_label = f"Uploaded: {_uploaded.name}" if _uploaded is not None else None
+_options = _csv_names + ([_uploaded_label] if _uploaded_label else [])
+
+if not _options:
+    up = st.file_uploader("Or upload a team CSV", type=["csv"], key=_UPLOAD_KEY)
     if up is None:
         st.info("Please upload your team stats CSV.")
         st.stop()
     df_raw = _read_csv_bytes(up.getvalue())
+else:
+    # Auto-select a freshly uploaded file. Otherwise, if the currently stored
+    # choice no longer exists in `_options` (e.g. the upload was just cleared,
+    # or a new upload replaced the one that was selected), fall back to the
+    # first preset rather than letting the selectbox choke on a stale value.
+    if _uploaded_label and st.session_state.get("_ts_last_uploaded_name") != _uploaded.name:
+        st.session_state[_CHOICE_KEY] = _uploaded_label
+        st.session_state["_ts_last_uploaded_name"] = _uploaded.name
+    elif st.session_state.get(_CHOICE_KEY) not in _options:
+        st.session_state[_CHOICE_KEY] = _options[0]
+
+    _csv_choice = st.selectbox("Team stats CSV:", _options, index=0, key=_CHOICE_KEY)
+    up = st.file_uploader("Or upload a team CSV", type=["csv"], key=_UPLOAD_KEY)
+
+    if _uploaded_label and _csv_choice == _uploaded_label:
+        df_raw = _read_csv_bytes(_uploaded.getvalue())
+    else:
+        df_raw = _read_csv_path(str(Path.cwd() / _csv_choice))
 
 # ─────────────────────────────────────────────
 # COLUMN NAME NORMALISATION
@@ -116,6 +143,17 @@ def normalise_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename)
 
 df_raw = normalise_cols(df_raw)
+
+# "Team" and "League" are the two columns every downstream feature indexes on
+# unconditionally (filtering, groupby, team pickers, Similar Teams). Every other
+# column already degrades gracefully when absent (compute_overall/attack/defense/
+# possession read via row.get(..., np.nan), and the percentile loop above skips
+# any metric not present) — so these two are the real minimum for an uploaded CSV.
+_REQUIRED_COLS = ["Team", "League"]
+_missing_cols = [c for c in _REQUIRED_COLS if c not in df_raw.columns]
+if _missing_cols:
+    st.error(f"This CSV is missing required column(s): {', '.join(_missing_cols)}. Team HQ needs at least Team and League to work — check the column names (or their common aliases) and re-upload.")
+    st.stop()
 
 NUMERIC_COLS = [c for c in COL_MAP.keys() if c not in ("League","Team")]
 for c in NUMERIC_COLS:
