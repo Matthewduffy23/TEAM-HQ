@@ -234,6 +234,7 @@ LEAGUE_STRENGTHS = {
     "Italy 3":45.00,"Denmark 2":40.39,"Moldova 1":40.39,"USA 2":40.00,"Latvia 1":40.00,
     "Montenegro 1":39.80,"Scotland 2":38.63,"Austria 2":38.24,"England 5":33.33,
     "Estonia 1":40.00,"Northern Ireland 1":30.98,"England 6":16.08,
+    "Qatar 1":47.00,"Luxembourg 1":42.61,
 }
 
 GBE_LEAGUE_BANDS = {
@@ -270,7 +271,7 @@ COUNTRY_TO_REGION = {
     "Ecuador":"South America","Uruguay":"South America","Chile":"South America",
     "USA":"North America","Mexico":"North America","Japan":"Asia","Korea":"Asia",
     "China":"Asia","Azerbaijan":"Asia","Morocco":"Africa","Tunisia":"Africa",
-    "South Africa":"Africa","Georgia":"Europe",
+    "South Africa":"Africa","Georgia":"Europe","Qatar":"Asia","Luxembourg":"Europe",
 }
 
 def league_country(lg: str) -> str:
